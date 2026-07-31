@@ -42,8 +42,15 @@ app.secret_key = os.environ.get("PICKLEVISION_SECRET", "picklevision_development
 # Set PICKLEVISION_API_KEY in your environment, then send it using the
 # X-PickleVision-Key header. If unset, local prototype posting is allowed.
 
-# Initialize Firebase Admin SDK
-cred = credentials.Certificate("firebase-key.json")
+# Initialize Firebase Admin SDK (Supports both Render and local testing)
+firebase_json_env = os.environ.get("FIREBASE_KEY_JSON")
+
+if firebase_json_env:
+    cred_dict = json.loads(firebase_json_env)
+    cred = credentials.Certificate(cred_dict)
+else:
+    cred = credentials.Certificate("firebase-key.json")
+
 firebase_admin.initialize_app(cred)
 firestore_db = firestore.client()
 
