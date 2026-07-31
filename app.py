@@ -19,6 +19,13 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from ai.mock_ai import generate_mock_event
 
+
+from ai.mock_ai import generate_mock_event
+
+# Add Firebase imports here:
+import firebase_admin
+from firebase_admin import credentials, firestore
+
 try:
     import psutil  # optional, used when available
 except Exception:  # pragma: no cover
@@ -34,6 +41,12 @@ app.secret_key = os.environ.get("PICKLEVISION_SECRET", "picklevision_development
 # Optional protection for AI/Raspberry Pi event posting.
 # Set PICKLEVISION_API_KEY in your environment, then send it using the
 # X-PickleVision-Key header. If unset, local prototype posting is allowed.
+
+# Initialize Firebase Admin SDK
+cred = credentials.Certificate("firebase-key.json")
+firebase_admin.initialize_app(cred)
+firestore_db = firestore.client()
+
 API_INGEST_KEY = os.environ.get("PICKLEVISION_API_KEY", "").strip()
 
 state_lock = Lock()
@@ -1271,6 +1284,8 @@ def export_games_csv():
         mimetype="text/csv",
         headers={"Content-Disposition": "attachment; filename=picklevision_games.csv"},
     )
+
+
 
 
 if __name__ == "__main__":

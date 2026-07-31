@@ -1,0 +1,9 @@
+# Secret Keys & Credentials
+firebase-key.json
+*.json
+
+# Python Cache & Environments
+__pycache__/
+*.pyc
+venv/
+.env
