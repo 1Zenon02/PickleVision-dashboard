@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Session Setup{% endblock %}
+{% block content %}
+<section class="panel narrow">
+  <p class="eyebrow">Match Setup</p>
+  <h2>Enter player information</h2>
+  <form method="post" class="form-grid">
+    <label>Player Name<input name="player_name" placeholder="Player 1"></label>
+    <label>Teammate Name<input name="teammate_name" placeholder="Teammate"></label>
+    <label>Opponent 1<input name="opponent_1" placeholder="Opponent 1"></label>
+    <label>Opponent 2<input name="opponent_2" placeholder="Opponent 2"></label>
+    <button class="btn primary" type="submit">Save and Open Dashboard</button>
+  </form>
+</section>
+{% endblock %}

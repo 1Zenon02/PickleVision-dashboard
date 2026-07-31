@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<section class="session-strip">
+  <div><p class="eyebrow">Validation and Results</p><h2>Thesis-ready metrics report</h2></div>
+  <a class="btn primary" href="/api/export/events.csv">Export Events CSV</a>
+</section>
+
+<section class="dashboard-grid compact">
+  <article class="metric-card"><span>Accuracy</span><strong id="rAccuracy">--</strong><small>system vs human call</small></article>
+  <article class="metric-card"><span>Precision</span><strong id="rPrecision">--</strong><small>IN-call reliability</small></article>
+  <article class="metric-card"><span>Recall</span><strong id="rRecall">--</strong><small>actual IN detection</small></article>
+  <article class="metric-card"><span>F1-score</span><strong id="rF1">--</strong><small>balanced reliability</small></article>
+  <article class="metric-card"><span>MAE</span><strong id="rMae">--</strong><small>bounce error estimate</small></article>
+  <article class="metric-card"><span>Avg FPS</span><strong id="rFps">--</strong><small>system throughput</small></article>
+</section>
+
+<section class="two-column">
+  <article class="panel">
+    <p class="eyebrow">Confusion Matrix</p>
+    <h3>System call compared with human validation</h3>
+    <div class="matrix">
+      <div></div><div>Human IN</div><div>Human OUT</div>
+      <div>System IN</div><strong id="tp">--</strong><strong id="fp">--</strong>
+      <div>System OUT</div><strong id="fn">--</strong><strong id="tn">--</strong>
+    </div>
+  </article>
+  <article class="panel">
+    <p class="eyebrow">Heatmap Preparation</p>
+    <h3>Bounce distribution</h3>
+    <canvas id="heatmapCanvas" width="700" height="420"></canvas>
+  </article>
+</section>
+
+<section class="panel">
+  <p class="eyebrow">Report Notes</p>
+  <h3>How to use this page during testing</h3>
+  <p class="muted">For now, values are generated from simulated events. After connecting the real camera/model pipeline, the same report will display actual validation data.</p>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='reports.js') }}"></script>{% endblock %}

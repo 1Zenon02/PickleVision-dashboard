@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Login · Project PickleVision{% endblock %}
+{% block content %}
+<section class="panel narrow card">
+  <p class="eyebrow">Account Access</p>
+  <h2>Login</h2>
+  <form class="form-grid" method="post">
+    <label>Email
+      <input type="email" name="email" required placeholder="coach@example.com">
+    </label>
+    <label>Password
+      <input type="password" name="password" required placeholder="Enter password">
+    </label>
+    <button class="btn primary" type="submit">Login</button>
+  </form>
+  <p class="form-note">No account yet? <a href="{{ url_for('signup') }}">Create a PickleVision account</a>.</p>
+</section>
+{% endblock %}

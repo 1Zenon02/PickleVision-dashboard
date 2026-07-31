@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}PickleVision Home{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-card">
+    <p class="eyebrow">Prototype Preparation Mode</p>
+    <h2>Hardware-ready dashboard for pickleball line calling and analytics</h2>
+    <div class="actions">
+      {% if current_user %}
+        <a class="btn primary" href="{{ url_for('dashboard') }}">Open Dashboard</a>
+        <a class="btn" href="{{ url_for('setup') }}">Session Setup</a>
+      {% else %}
+        <a class="btn primary" href="{{ url_for('signup') }}">Create Account</a>
+        <a class="btn" href="{{ url_for('login') }}">Login</a>
+      {% endif %}
+    </div>
+  </div>
+  <div class="hero-grid">
+    <div class="mini-card"><strong>Line Call</strong></div>
+    <div class="mini-card"><strong>Trajectory</strong></div>
+    <div class="mini-card"><strong>Latency</strong></div>
+    <div class="mini-card"><strong>Reports</strong></div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Match History{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head"><div><p class="eyebrow">History</p><h2>Current session event history</h2></div><a class="btn" href="/api/export/events.csv">Export CSV</a></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Timestamp</th><th>Call</th><th>Zone</th><th>Confidence</th><th>FPS</th><th>Latency</th></tr></thead>
+      <tbody id="historyTable"></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='history.js') }}"></script>{% endblock %}

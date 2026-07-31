@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Player Statistics · Project PickleVision{% endblock %}
+{% block content %}
+<section class="session-strip card">
+  <div>
+    <p class="eyebrow">Player Profile</p>
+    <h2>{{ player.player_name }}</h2>
+    <p class="muted">Overall statistics across saved games and tracked system events.</p>
+  </div>
+  <div class="actions"><a class="btn" href="{{ url_for('new_game') }}">Add Game</a><a class="btn" href="{{ url_for('export_games_csv') }}">Export Games CSV</a></div>
+</section>
+
+<section class="dashboard-grid compact">
+  <div class="metric-card card"><span>Total Games</span><strong>{{ stats.total_games }}</strong><small>recorded matches</small></div>
+  <div class="metric-card card"><span>Wins</span><strong>{{ stats.wins }}</strong><small>saved game results</small></div>
+  <div class="metric-card card"><span>Losses</span><strong>{{ stats.losses }}</strong><small>saved game results</small></div>
+  <div class="metric-card card"><span>Win %</span><strong>{{ stats.winning_percentage }}%</strong><small>wins ÷ games</small></div>
+  <div class="metric-card card"><span>Total Shots</span><strong>{{ metrics.total_shots }}</strong><small>tracked events</small></div>
+  <div class="metric-card card"><span>Accuracy</span><strong>{{ (metrics.accuracy * 100)|round|int }}%</strong><small>system vs human call</small></div>
+</section>
+
+<section class="two-column">
+  <div class="panel card">
+    <div class="panel-head"><div><p class="eyebrow">Charts</p><h3>Win/Loss Summary</h3></div></div>
+    <canvas id="winLossChart" height="180"></canvas>
+  </div>
+  <div class="panel card">
+    <div class="panel-head"><div><p class="eyebrow">System Analytics</p><h3>Overall Tracking Stats</h3></div></div>
+    <div class="status-list">
+      <div><span>Average Confidence</span><strong>{{ (metrics.avg_confidence * 100)|round|int }}%</strong></div>
+      <div><span>Average Latency</span><strong>{{ metrics.avg_latency_ms }} ms</strong></div>
+      <div><span>Average FPS</span><strong>{{ metrics.avg_fps }}</strong></div>
+      <div><span>MAE/Error Distance</span><strong>{{ metrics.mae_mm }} mm</strong></div>
+      <div><span>IN / OUT Calls</span><strong>{{ metrics.in_calls }} / {{ metrics.out_calls }}</strong></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel card">
+  <div class="panel-head"><div><p class="eyebrow">Recent Games</p><h3>Latest recorded matches</h3></div><a class="btn" href="{{ url_for('games') }}">Open Games</a></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Opponent</th><th>Score</th><th>Result</th><th>Notes</th></tr></thead>
+      <tbody>
+      {% for game in stats.games[:8] %}
+        <tr><td>{{ game.date_played }}</td><td>{{ game.opponent_name }}</td><td>{{ game.player_score }} - {{ game.opponent_score }}</td><td><span class="badge {{ 'in' if game.result == 'Win' else 'out' }}">{{ game.result }}</span></td><td>{{ game.notes or '-' }}</td></tr>
+      {% else %}
+        <tr><td colspan="5">No games recorded yet. Click Add Game to test winning percentage and overall player statistics.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const ctx = document.getElementById('winLossChart');
+if (ctx && window.Chart) {
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels: ['Wins', 'Losses', 'Draws'], datasets: [{ data: [{{ stats.wins }}, {{ stats.losses }}, {{ stats.draws }}] }] },
+    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Add Game · Project PickleVision{% endblock %}
+{% block content %}
+<section class="panel narrow card">
+  <p class="eyebrow">Game Record</p>
+  <h2>Add New Game</h2>
+  <p class="muted">Use this to test recent games, overall games, and winning percentage.</p>
+  <form class="form-grid" method="post">
+    <label>Opponent Name
+      <input type="text" name="opponent_name" required placeholder="Opponent name">
+    </label>
+    <label>Player Score
+      <input type="number" name="player_score" min="0" required value="11">
+    </label>
+    <label>Opponent Score
+      <input type="number" name="opponent_score" min="0" required value="7">
+    </label>
+    <label>Date Played
+      <input type="date" name="date_played" value="{{ today }}">
+    </label>
+    <label>Notes
+      <input type="text" name="notes" placeholder="Optional notes, e.g. indoor court, test match">
+    </label>
+    <button class="btn primary" type="submit">Save Game</button>
+  </form>
+</section>
+{% endblock %}

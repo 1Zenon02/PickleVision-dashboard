@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Coach Dashboard · Project PickleVision{% endblock %}
+{% block content %}
+<section class="session-strip card">
+  <div>
+    <p class="eyebrow">Coach Dashboard</p>
+    <h2>Player monitoring and match review</h2>
+  </div>
+  <div class="actions">
+    <a class="btn primary" href="{{ url_for('live_dashboard') }}">Live Session</a>
+    <a class="btn" href="{{ url_for('reports') }}">Reports</a>
+  </div>
+</section>
+
+<section class="role-dashboard card panel">
+  <div class="tab-bar" role="tablist">
+    <button class="tab-button active" data-tab="player-list" type="button">Player List</button>
+    <button class="tab-button" data-tab="selected-player-stats" type="button">Selected Player Stats</button>
+    <button class="tab-button" data-tab="match-review" type="button">Match Review</button>
+    <button class="tab-button" data-tab="trajectory-review" type="button">Trajectory Review</button>
+    <button class="tab-button" data-tab="coach-reports" type="button">Reports</button>
+  </div>
+
+  <section class="role-tab-panel active" id="player-list">
+    <div class="panel-head"><div><p class="eyebrow">Player List</p><h3>Registered players</h3></div></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Player</th><th>Email</th><th>Matches</th><th>Win %</th><th>Tracked Events</th><th>Action</th></tr></thead>
+        <tbody>
+        {% for item in players %}
+          <tr class="{{ 'selected-row' if selected_player and item.id == selected_player.id else '' }}">
+            <td>{{ item.player_name }}</td>
+            <td>{{ item.email or '-' }}</td>
+            <td>{{ item.stats.total_games }}</td>
+            <td>{{ item.stats.winning_percentage }}%</td>
+            <td>{{ item.events_count }}</td>
+            <td><a class="btn small" href="{{ url_for('coach_dashboard', player_id=item.id) }}">Select</a></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6">No player accounts yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="role-tab-panel" id="selected-player-stats">
+    <div class="panel-head"><div><p class="eyebrow">Selected Player Stats</p><h3>{{ selected_player.player_name if selected_player else 'No player selected' }}</h3></div></div>
+    <div class="dashboard-grid compact">
+      <article class="metric-card card"><span>Total Matches</span><strong>{{ selected_stats.total_games }}</strong><small></small></article>
+      <article class="metric-card card"><span>Wins</span><strong>{{ selected_stats.wins }}</strong><small></small></article>
+      <article class="metric-card card"><span>Losses</span><strong>{{ selected_stats.losses }}</strong><small></small></article>
+      <article class="metric-card card"><span>Win %</span><strong>{{ selected_stats.winning_percentage }}%</strong><small></small></article>
+      <article class="metric-card card"><span>Total Shots</span><strong>{{ selected_metrics.total_shots }}</strong><small></small></article>
+      <article class="metric-card card"><span>Accuracy</span><strong>{{ (selected_metrics.accuracy * 100)|round|int }}%</strong><small></small></article>
+    </div>
+    <div class="status-list role-status-list">
+      <div><span>Average Confidence</span><strong>{{ (selected_metrics.avg_confidence * 100)|round|int }}%</strong></div>
+      <div><span>Average Latency</span><strong>{{ selected_metrics.avg_latency_ms }} ms</strong></div>
+      <div><span>Average FPS</span><strong>{{ selected_metrics.avg_fps }}</strong></div>
+      <div><span>IN / OUT Calls</span><strong>{{ selected_metrics.in_calls }} / {{ selected_metrics.out_calls }}</strong></div>
+    </div>
+  </section>
+
+  <section class="role-tab-panel" id="match-review">
+    <div class="panel-head"><div><p class="eyebrow">Match Review</p><h3>{{ selected_player.player_name if selected_player else 'No player selected' }}</h3></div></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Opponent</th><th>Score</th><th>Result</th><th>Notes</th></tr></thead>
+        <tbody>
+        {% for game in selected_stats.games %}
+          <tr>
+            <td>{{ game.date_played }}</td>
+            <td>{{ game.opponent_name }}</td>
+            <td>{{ game.player_score }} - {{ game.opponent_score }}</td>
+            <td><span class="badge {{ 'in' if game.result == 'Win' else 'out' }}">{{ game.result }}</span></td>
+            <td>{{ game.notes or '-' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No match records for the selected player.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="role-tab-panel" id="trajectory-review">
+    <div class="panel-head"><div><p class="eyebrow">Trajectory Review</p><h3>Selected player rally path</h3></div></div>
+    <canvas id="coachTrajectoryCanvas" width="980" height="520"></canvas>
+    <div class="table-wrap role-table-space">
+      <table>
+        <thead><tr><th>Time</th><th>Call</th><th>Bounce</th><th>Zone</th><th>Confidence</th></tr></thead>
+        <tbody>
+        {% for event in selected_events|reverse %}
+          <tr>
+            <td>{{ event.timestamp.replace('T', ' ') }}</td>
+            <td><span class="badge {{ event.system_call|lower }}">{{ event.system_call }}</span></td>
+            <td>{{ event.bounce_x|round(2) }}, {{ event.bounce_y|round(2) }}</td>
+            <td>{{ event.court_zone }}</td>
+            <td>{{ (event.confidence * 100)|round|int }}%</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No trajectory events for the selected player.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="role-tab-panel" id="coach-reports">
+    <div class="panel-head"><div><p class="eyebrow">Reports</p><h3>Selected player validation metrics</h3></div><a class="btn" href="{{ url_for('reports') }}">Open Full Reports</a></div>
+    <div class="dashboard-grid compact">
+      <article class="metric-card card"><span>Precision</span><strong>{{ (selected_metrics.precision * 100)|round|int }}%</strong><small></small></article>
+      <article class="metric-card card"><span>Recall</span><strong>{{ (selected_metrics.recall * 100)|round|int }}%</strong><small></small></article>
+      <article class="metric-card card"><span>F1-score</span><strong>{{ (selected_metrics.f1_score * 100)|round|int }}%</strong><small></small></article>
+      <article class="metric-card card"><span>MAE</span><strong>{{ selected_metrics.mae_mm }} mm</strong><small></small></article>
+    </div>
+  </section>
+</section>
+<script type="application/json" id="coachTrajectoryData">{{ trajectory_data|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='role_dashboard.js') }}"></script>{% endblock %}

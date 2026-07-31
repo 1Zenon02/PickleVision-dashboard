@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Games · Project PickleVision{% endblock %}
+{% block content %}
+<section class="session-strip card">
+  <div>
+    <p class="eyebrow">Recent and Overall Games</p>
+    <h2>Game Records</h2>
+    <p class="muted">This is for win/loss records, winning percentage, and recent games. It is separate from the ball-event log.</p>
+  </div>
+  <div class="actions"><a class="btn primary" href="{{ url_for('new_game') }}">Add Game</a><a class="btn" href="{{ url_for('export_games_csv') }}">Export CSV</a></div>
+</section>
+
+<section class="dashboard-grid compact">
+  <div class="metric-card card"><span>Overall Games</span><strong>{{ stats.total_games }}</strong><small>all saved games</small></div>
+  <div class="metric-card card"><span>Wins</span><strong>{{ stats.wins }}</strong><small>player score higher</small></div>
+  <div class="metric-card card"><span>Losses</span><strong>{{ stats.losses }}</strong><small>opponent score higher</small></div>
+  <div class="metric-card card"><span>Draws</span><strong>{{ stats.draws }}</strong><small>same score</small></div>
+  <div class="metric-card card"><span>Winning %</span><strong>{{ stats.winning_percentage }}%</strong><small>wins / total games</small></div>
+  <div class="metric-card card"><span>Recent Games</span><strong>{{ games[:5]|length }}</strong><small>latest shown first</small></div>
+</section>
+
+<section class="two-column">
+  <div class="panel card">
+    <div class="panel-head"><div><p class="eyebrow">Chart</p><h3>Win / Loss / Draw</h3></div></div>
+    <canvas id="gameChart" height="170"></canvas>
+  </div>
+  <div class="panel card">
+    <div class="panel-head"><div><p class="eyebrow">Guide</p><h3>How this will be used later</h3></div></div>
+    <p class="muted">When actual test sessions start, each match can be saved here after the game. The event logger will still store ball calls, while this page stores match-level results.</p>
+  </div>
+</section>
+
+<section class="panel card">
+  <div class="panel-head"><div><p class="eyebrow">Recent Games</p><h3>Match list</h3></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Opponent</th><th>Player Score</th><th>Opponent Score</th><th>Result</th><th>Notes</th></tr></thead>
+      <tbody>
+      {% for game in games %}
+        <tr>
+          <td>{{ game.date_played }}</td><td>{{ game.opponent_name }}</td><td>{{ game.player_score }}</td><td>{{ game.opponent_score }}</td>
+          <td><span class="badge {{ 'in' if game.result == 'Win' else 'out' }}">{{ game.result }}</span></td><td>{{ game.notes or '-' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6">No game records yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const ctx = document.getElementById('gameChart');
+if (ctx && window.Chart) {
+  new Chart(ctx, {
+    type: 'bar',
+    data: { labels: ['Wins', 'Losses', 'Draws'], datasets: [{ label: 'Games', data: [{{ stats.wins }}, {{ stats.losses }}, {{ stats.draws }}] }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+  });
+}
+</script>
+{% endblock %}

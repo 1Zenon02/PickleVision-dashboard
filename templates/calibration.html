@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Calibration{% endblock %}
+{% block content %}
+<section class="panel">
+  <p class="eyebrow">Camera and Court Setup</p>
+  <h2>Calibration checklist</h2>
+  <p class="muted">Use this page as a preparation checklist. Later, this can become the real homography point-selection page.</p>
+  <div class="checklist">
+    <label><input type="checkbox"> Mount camera above/side of court with stable tripod or fence mount.</label>
+    <label><input type="checkbox"> Confirm full court boundary is visible in the camera feed.</label>
+    <label><input type="checkbox"> Mark/select four court corner points for homography mapping.</label>
+    <label><input type="checkbox"> Record a short test rally and check if the ball is visible.</label>
+    <label><input type="checkbox"> Verify lighting, glare, motion blur, and occlusion conditions.</label>
+    <label><input type="checkbox"> Run test mode and compare system calls with human calls.</label>
+  </div>
+</section>
+
+<section class="panel">
+  <p class="eyebrow">Future Upgrade</p>
+  <h3>Homography setup fields</h3>
+  <div class="form-grid calibration-grid">
+    <label>Top-left court point<input placeholder="x,y"></label>
+    <label>Top-right court point<input placeholder="x,y"></label>
+    <label>Bottom-left court point<input placeholder="x,y"></label>
+    <label>Bottom-right court point<input placeholder="x,y"></label>
+    <button class="btn" disabled>Save Calibration later</button>
+  </div>
+</section>
+{% endblock %}

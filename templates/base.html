@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Project PickleVision{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">Project PickleVision: Computer Vision-Based Pickleball System</p>
+      <h1>Project PickleVision</h1>
+      {% if current_user %}<p class="signed-in">Signed in as {{ current_user.full_name }} · {{ current_user.role|title }}</p>{% endif %}
+    </div>
+    <nav class="nav">
+      <a href="{{ url_for('landing') }}">Home</a>
+      {% if current_user %}
+        {% if current_user.role == 'player' %}
+          <a href="{{ url_for('player_dashboard') }}">Player Dashboard</a>
+        {% else %}
+          <a href="{{ url_for('coach_dashboard') }}">Coach Dashboard</a>
+        {% endif %}
+        <a href="{{ url_for('setup') }}">Setup</a>
+        <a href="{{ url_for('live_dashboard') }}">Live Session</a>
+        <a href="{{ url_for('reports') }}">Reports</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+      {% else %}
+        <a href="{{ url_for('login') }}">Login</a>
+        <a href="{{ url_for('signup') }}">Sign Up</a>
+      {% endif %}
+    </nav>
+  </header>
+  <main class="page-shell">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-wrap">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

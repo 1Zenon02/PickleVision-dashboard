@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Player Dashboard · Project PickleVision{% endblock %}
+{% block content %}
+<section class="session-strip card">
+  <div>
+    <p class="eyebrow">Player Dashboard</p>
+    <h2>{{ player.player_name }}</h2>
+  </div>
+  <div class="actions">
+    <a class="btn primary" href="{{ url_for('setup') }}">Start Match Setup</a>
+    <a class="btn" href="{{ url_for('live_dashboard') }}">Live Session</a>
+  </div>
+</section>
+
+<section class="role-dashboard card panel">
+  <div class="tab-bar" role="tablist">
+    <button class="tab-button active" data-tab="my-matches" type="button">My Matches</button>
+    <button class="tab-button" data-tab="my-statistics" type="button">My Statistics</button>
+    <button class="tab-button" data-tab="my-trajectory" type="button">My Trajectory</button>
+    <button class="tab-button" data-tab="my-reports" type="button">My Reports</button>
+  </div>
+
+  <section class="role-tab-panel active" id="my-matches">
+    <div class="panel-head">
+      <div><p class="eyebrow">My Matches</p><h3>Saved match records</h3></div>
+      <a class="btn" href="{{ url_for('new_game') }}">Add Match</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Opponent</th><th>Score</th><th>Result</th><th>Notes</th></tr></thead>
+        <tbody>
+        {% for game in stats.games %}
+          <tr>
+            <td>{{ game.date_played }}</td>
+            <td>{{ game.opponent_name }}</td>
+            <td>{{ game.player_score }} - {{ game.opponent_score }}</td>
+            <td><span class="badge {{ 'in' if game.result == 'Win' else 'out' }}">{{ game.result }}</span></td>
+            <td>{{ game.notes or '-' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No matches recorded yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="role-tab-panel" id="my-statistics">
+    <div class="panel-head"><div><p class="eyebrow">My Statistics</p><h3>Player and system summary</h3></div></div>
+    <div class="dashboard-grid compact">
+      <article class="metric-card card"><span>Total Matches</span><strong>{{ stats.total_games }}</strong><small></small></article>
+      <article class="metric-card card"><span>Wins</span><strong>{{ stats.wins }}</strong><small></small></article>
+      <article class="metric-card card"><span>Losses</span><strong>{{ stats.losses }}</strong><small></small></article>
+      <article class="metric-card card"><span>Win %</span><strong>{{ stats.winning_percentage }}%</strong><small></small></article>
+      <article class="metric-card card"><span>Total Shots</span><strong>{{ metrics.total_shots }}</strong><small></small></article>
+      <article class="metric-card card"><span>Accuracy</span><strong>{{ (metrics.accuracy * 100)|round|int }}%</strong><small></small></article>
+    </div>
+    <div class="status-list role-status-list">
+      <div><span>Average Confidence</span><strong>{{ (metrics.avg_confidence * 100)|round|int }}%</strong></div>
+      <div><span>Average Latency</span><strong>{{ metrics.avg_latency_ms }} ms</strong></div>
+      <div><span>Average FPS</span><strong>{{ metrics.avg_fps }}</strong></div>
+      <div><span>IN / OUT Calls</span><strong>{{ metrics.in_calls }} / {{ metrics.out_calls }}</strong></div>
+    </div>
+  </section>
+
+  <section class="role-tab-panel" id="my-trajectory">
+    <div class="panel-head"><div><p class="eyebrow">My Trajectory</p><h3>Latest tracked rally path</h3></div></div>
+    <canvas id="playerTrajectoryCanvas" width="980" height="520"></canvas>
+    <div class="table-wrap role-table-space">
+      <table>
+        <thead><tr><th>Time</th><th>Call</th><th>Bounce</th><th>Zone</th><th>Confidence</th></tr></thead>
+        <tbody>
+        {% for event in events|reverse %}
+          <tr>
+            <td>{{ event.timestamp.replace('T', ' ') }}</td>
+            <td><span class="badge {{ event.system_call|lower }}">{{ event.system_call }}</span></td>
+            <td>{{ event.bounce_x|round(2) }}, {{ event.bounce_y|round(2) }}</td>
+            <td>{{ event.court_zone }}</td>
+            <td>{{ (event.confidence * 100)|round|int }}%</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No trajectory events yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="role-tab-panel" id="my-reports">
+    <div class="panel-head">
+      <div><p class="eyebrow">My Reports</p><h3>Export and validation metrics</h3></div>
+      <div class="actions"><a class="btn" href="{{ url_for('reports') }}">Open Full Reports</a><a class="btn" href="{{ url_for('export_events_csv') }}">Export CSV</a></div>
+    </div>
+    <div class="dashboard-grid compact">
+      <article class="metric-card card"><span>Precision</span><strong>{{ (metrics.precision * 100)|round|int }}%</strong><small></small></article>
+      <article class="metric-card card"><span>Recall</span><strong>{{ (metrics.recall * 100)|round|int }}%</strong><small></small></article>
+      <article class="metric-card card"><span>F1-score</span><strong>{{ (metrics.f1_score * 100)|round|int }}%</strong><small></small></article>
+      <article class="metric-card card"><span>MAE</span><strong>{{ metrics.mae_mm }} mm</strong><small></small></article>
+    </div>
+  </section>
+</section>
+<script type="application/json" id="playerTrajectoryData">{{ trajectory_data|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='role_dashboard.js') }}"></script>{% endblock %}
