@@ -1,15 +1,78 @@
 {% extends "base.html" %}
-{% block title %}Session Setup{% endblock %}
+{% block title %}Match Setup{% endblock %}
+
 {% block content %}
 <section class="panel narrow">
   <p class="eyebrow">Match Setup</p>
   <h2>Enter player information</h2>
-  <form method="post" class="form-grid">
-    <label>Player Name<input name="player_name" placeholder="Player 1"></label>
-    <label>Teammate Name<input name="teammate_name" placeholder="Teammate"></label>
-    <label>Opponent 1<input name="opponent_1" placeholder="Opponent 1"></label>
-    <label>Opponent 2<input name="opponent_2" placeholder="Opponent 2"></label>
+
+  <form method="post" class="form-grid" id="matchSetupForm">
+
+    <!-- MATCH TYPE SELECTOR -->
+    <div class="match-type-field">
+      <span class="form-label">Match Type</span>
+
+      <div class="match-type-options">
+        <label class="match-type-card">
+          <input type="radio" name="match_type" value="singles"
+                 {% if match_type == 'singles' %}checked{% endif %}>
+          <div>
+            <strong>Singles</strong>
+            <small>1 player vs 1 opponent</small>
+          </div>
+        </label>
+
+        <label class="match-type-card">
+          <input type="radio" name="match_type" value="doubles"
+                 {% if match_type != 'singles' %}checked{% endif %}>
+          <div>
+            <strong>Doubles</strong>
+            <small>Player and teammate vs two opponents</small>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <label>
+      Player Name
+      <input name="player_name" placeholder="Player 1" value="{{ player_name }}">
+    </label>
+
+    <label class="doubles-only">
+      Teammate Name
+      <input name="teammate_name" placeholder="Teammate" value="{{ teammate_name }}">
+    </label>
+
+    <label>
+      Opponent Name
+      <input name="opponent_1" placeholder="Opponent 1" value="{{ opponent_1 }}">
+    </label>
+
+    <label class="doubles-only">
+      Opponent 2
+      <input name="opponent_2" placeholder="Opponent 2" value="{{ opponent_2 }}">
+    </label>
+
     <button class="btn primary" type="submit">Save and Open Dashboard</button>
   </form>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function updateMatchTypeFields() {
+    const selected = document.querySelector('input[name="match_type"]:checked')?.value || 'doubles';
+    const doublesFields = document.querySelectorAll('.doubles-only');
+
+    doublesFields.forEach((field) => {
+      field.style.display = selected === 'doubles' ? 'grid' : 'none';
+    });
+  }
+
+  document.querySelectorAll('input[name="match_type"]').forEach((radio) => {
+    radio.addEventListener('change', updateMatchTypeFields);
+  });
+
+  updateMatchTypeFields();
+</script>
 {% endblock %}

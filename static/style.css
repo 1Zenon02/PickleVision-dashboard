@@ -285,3 +285,116 @@ select {
   .role-status-list { grid-template-columns: 1fr; }
   .tab-button { width: 100%; justify-content: center; }
 }
+
+
+/* Match setup: Singles or Doubles selector */
+.form-label {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.match-type-field {
+  display: grid;
+  gap: 10px;
+}
+
+.match-type-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.match-type-card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  background: #fbfdff;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.match-type-card input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+}
+
+.match-type-card strong {
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.match-type-card small {
+  grid-column: 2;
+  color: var(--muted);
+}
+
+.match-type-card:has(input:checked) {
+  border-color: #a7d9d0;
+  background: #e6f4f1;
+  box-shadow: 0 10px 24px rgba(15, 95, 122, .10);
+}
+
+@media (max-width: 560px) {
+  .match-type-options {
+    grid-template-columns: 1fr;
+  }
+}
+/* Match setup: Singles or Doubles selector */
+.form-label {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.match-type-field {
+  display: grid;
+  gap: 10px;
+}
+
+.match-type-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.match-type-card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  background: #fbfdff;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.match-type-card input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+}
+
+.match-type-card strong {
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.match-type-card small {
+  color: var(--muted);
+}
+
+.match-type-card:has(input:checked) {
+  border-color: #a7d9d0;
+  background: #e6f4f1;
+  box-shadow: 0 10px 24px rgba(15, 95, 122, .10);
+}
+
+@media (max-width: 560px) {
+  .match-type-options {
+    grid-template-columns: 1fr;
+  }
+}

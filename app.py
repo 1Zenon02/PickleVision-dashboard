@@ -204,6 +204,14 @@ def get_or_create_player_for_user(user_id: int, name: str) -> int:
         )
         return int(cur.lastrowid)
 
+def current_match_type() -> str:
+    """Return the selected match type for the current setup."""
+    match_type = str(session.get("match_type", "doubles")).strip().lower()
+
+    if match_type in {"singles", "doubles"}:
+        return match_type
+
+    return "doubles"
 
 def ensure_session() -> None:
     user = current_user()
@@ -281,18 +289,17 @@ def team_short_name(team_key: Optional[str]) -> Optional[str]:
     return None
 
 def fresh_score_state(started: bool = False) -> Dict[str, Any]:
-    """Create a side-out doubles pickleball score state.
+    """Create a pickleball score state for singles or doubles."""
+    match_type = current_match_type()
 
-    The dashboard uses the user's requested prototype display: before the game
-    starts it shows 0-0-0. When the Start Game button is pressed, the first
-    active server becomes Server 1 and the live call becomes 0-0-1.
+    if match_type == "singles":
+        pregame_call = "0-0"
+    else:
+        pregame_call = "0-0-0"
 
-    Note: official USA Pickleball side-out scoring normally starts doubles at
-    0-0-2. To switch back to strict official scoring, change server_number to 2
-    when start_score_state() is called.
-    """
     return {
         "started": started,
+        "match_type": match_type,
         "team_a_score": 0,
         "team_b_score": 0,
         "serving_team": "A",
@@ -300,7 +307,7 @@ def fresh_score_state(started: bool = False) -> Dict[str, Any]:
         "target_score": 11,
         "win_by": 2,
         "game_over": False,
-        "last_action": "Ready to start. Pre-game display is 0-0-0.",
+        "last_action": f"Ready to start. Pre-game display is {pregame_call}.",
         "last_rally_winner": None,
         "last_point_team": None,
         "last_point_player": None,
@@ -388,30 +395,49 @@ def service_marker_payload(state: Optional[Dict[str, Any]] = None) -> Dict[str, 
 
 def score_payload() -> Dict[str, Any]:
     state = get_score_state()
+
+    match_type = current_match_type()
+
     serving_team = state["serving_team"]
     receiving_team = "B" if serving_team == "A" else "A"
+
     serving_score = state["team_a_score"] if serving_team == "A" else state["team_b_score"]
     receiving_score = state["team_b_score"] if serving_team == "A" else state["team_a_score"]
-    score_call = "0-0-0" if not state.get("started") else f"{serving_score}-{receiving_score}-{state['server_number']}"
+
+    # Singles uses 2 numbers: server score - receiver score
+    # Doubles uses 3 numbers: serving team score - receiving team score - server number
+    if match_type == "singles":
+        score_call = "0-0" if not state.get("started") else f"{serving_score}-{receiving_score}"
+    else:
+        score_call = "0-0-0" if not state.get("started") else f"{serving_score}-{receiving_score}-{state['server_number']}"
+
     last_point_team = state.get("last_point_team")
     service_markers = service_marker_payload(state)
+
     return {
         **state,
+        "match_type": match_type,
+        "match_type_label": "Singles" if match_type == "singles" else "Doubles",
+
         "team_a_name": team_label("A"),
         "team_b_name": team_label("B"),
         "team_a_players": team_players("A"),
         "team_b_players": team_players("B"),
+
         "serving_team_name": team_label(serving_team),
         "receiving_team_name": team_label(receiving_team),
         "current_server_name": current_server_name(state),
+
         "serving_score": serving_score,
         "receiving_score": receiving_score,
         "score_call": score_call,
         "score_call_words": score_call.replace("-", ", "),
+
         "serving_side": service_markers["serving_side"],
         "serving_side_label": service_markers["serving_side_label"],
         "receiving_side_label": service_markers["receiving_side_label"],
         "court_markers": service_markers,
+
         "last_point_team_name": team_label(last_point_team) if last_point_team in {"A", "B"} else "No point",
         "last_rally_winner_name": team_label(state.get("last_rally_winner")) if state.get("last_rally_winner") in {"A", "B"} else "No rally",
         "last_point_player": state.get("last_point_player") or "No point",
@@ -928,19 +954,48 @@ def logout():
 @login_required
 def setup():
     if request.method == "POST":
+        match_type = request.form.get("match_type", "doubles").strip().lower()
+
+        if match_type not in {"singles", "doubles"}:
+            match_type = "doubles"
+
+        session["match_type"] = match_type
         session["player_name"] = request.form.get("player_name") or session.get("player_name", "Player 1")
-        session["teammate_name"] = request.form.get("teammate_name") or "Teammate"
         session["opponent_1"] = request.form.get("opponent_1") or "Opponent 1"
-        session["opponent_2"] = request.form.get("opponent_2") or "Opponent 2"
-        # Update player profile name too.
-        with db() as conn:
-            conn.execute("UPDATE players SET player_name = ? WHERE id = ?", (session["player_name"], session.get("player_id")))
-        # A new match setup begins with the requested pre-game display 0-0-0.
+
+        if match_type == "doubles":
+            session["teammate_name"] = request.form.get("teammate_name") or "Teammate"
+            session["opponent_2"] = request.form.get("opponent_2") or "Opponent 2"
+        else:
+            session["teammate_name"] = ""
+            session["opponent_2"] = ""
+
+        # Reset score when a new match setup is saved.
+        # Singles starts as 0-0.
+        # Doubles starts as 0-0-0 before pressing Start Game.
         session["score_state"] = fresh_score_state(started=False)
+
         session.modified = True
+
+        # Update player profile name if player_id exists.
+        if session.get("player_id"):
+            with db() as conn:
+                conn.execute(
+                    "UPDATE players SET player_name = ? WHERE id = ?",
+                    (session["player_name"], session.get("player_id"))
+                )
+
         ensure_session()
         return redirect(url_for("live_dashboard"))
-    return render_template("setup.html")
+
+    return render_template(
+        "setup.html",
+        match_type=current_match_type(),
+        player_name=session.get("player_name", ""),
+        teammate_name=session.get("teammate_name", ""),
+        opponent_1=session.get("opponent_1", ""),
+        opponent_2=session.get("opponent_2", ""),
+    )
 
 
 @app.route("/dashboard")
@@ -1021,6 +1076,7 @@ def live_dashboard():
         teammate_name=session.get("teammate_name", "Teammate"),
         opponent_1=session.get("opponent_1", "Opponent 1"),
         opponent_2=session.get("opponent_2", "Opponent 2"),
+        match_type=current_match_type(),
     )
 
 

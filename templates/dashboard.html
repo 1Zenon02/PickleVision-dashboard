@@ -1,11 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Live Dashboard{% endblock %}
+
 {% block content %}
+
 <section class="session-strip">
   <div>
     <p class="eyebrow">Live Session</p>
-    <h2>{{ player_name }} / {{ teammate_name }} vs {{ opponent_1 }} / {{ opponent_2 }}</h2>
+
+    {% if match_type == 'singles' %}
+      <h2>{{ player_name }} vs {{ opponent_1 }}</h2>
+    {% else %}
+      <h2>{{ player_name }} / {{ teammate_name }} vs {{ opponent_1 }} / {{ opponent_2 }}</h2>
+    {% endif %}
   </div>
+
   <div class="actions">
     <button class="btn" id="toggleSimulation">Pause Simulation</button>
     <button class="btn danger" id="resetSession">New Session</button>
@@ -16,50 +24,98 @@
 <section class="panel score-panel">
   <div class="panel-head score-head">
     <div>
-      <p class="eyebrow">Doubles Scoring</p>
+      <p class="eyebrow" id="scoreModeLabel">
+        {{ 'Singles Scoring' if match_type == 'singles' else 'Doubles Scoring' }}
+      </p>
       <h3>Current pickleball score call</h3>
     </div>
-    <strong id="scoreCall" class="score-call">0-0-0</strong>
+
+    <strong id="scoreCall" class="score-call">
+      {{ '0-0' if match_type == 'singles' else '0-0-0' }}
+    </strong>
   </div>
 
   <div class="score-grid">
+
     <article class="score-card">
-      <span>Team A</span>
+      <span id="teamALabel">{{ 'Player' if match_type == 'singles' else 'Team A' }}</span>
       <strong id="teamAScore">0</strong>
-      <small id="teamAName">{{ player_name }} / {{ teammate_name }}</small>
+
+      {% if match_type == 'singles' %}
+        <small id="teamAName">{{ player_name }}</small>
+      {% else %}
+        <small id="teamAName">{{ player_name }} / {{ teammate_name }}</small>
+      {% endif %}
     </article>
+
     <article class="score-card">
-      <span>Team B</span>
+      <span id="teamBLabel">{{ 'Opponent' if match_type == 'singles' else 'Team B' }}</span>
       <strong id="teamBScore">0</strong>
-      <small id="teamBName">{{ opponent_1 }} / {{ opponent_2 }}</small>
+
+      {% if match_type == 'singles' %}
+        <small id="teamBName">{{ opponent_1 }}</small>
+      {% else %}
+        <small id="teamBName">{{ opponent_1 }} / {{ opponent_2 }}</small>
+      {% endif %}
     </article>
+
     <article class="score-card active">
-      <span>Serving Team</span>
-      <strong id="servingTeam">Team A</strong>
-      <small><span id="serverNumber">Server 0</span> • <span id="currentServer">Not assigned yet</span></small>
+      <span id="servingCardLabel">
+        {{ 'Server' if match_type == 'singles' else 'Serving Team' }}
+      </span>
+
+      <strong id="servingTeam">
+        {{ player_name if match_type == 'singles' else 'Team A' }}
+      </strong>
+
+      <small>
+        <span id="serverNumber">
+          {{ 'Singles' if match_type == 'singles' else 'Server 0' }}
+        </span>
+        •
+        <span id="currentServer">Not assigned yet</span>
+      </small>
     </article>
+
     <article class="score-card">
       <span>Serving Side</span>
       <strong id="servingSide">--</strong>
       <small id="serviceBox">Court position</small>
     </article>
+
     <article class="score-card">
       <span>Last Rally Winner</span>
       <strong id="lastRallyWinner">No rally yet</strong>
       <small id="lastScorer">No point yet</small>
     </article>
+
     <article class="score-card">
-      <span>Receiving Team</span>
-      <strong id="receivingTeam">Team B</strong>
+      <span id="receivingCardLabel">
+        {{ 'Receiver' if match_type == 'singles' else 'Receiving Team' }}
+      </span>
+
+      <strong id="receivingTeam">
+        {{ opponent_1 if match_type == 'singles' else 'Team B' }}
+      </strong>
+
       <small id="receivingSide">Waiting</small>
     </article>
+
   </div>
 
   <p id="scoreMessage" class="score-message">Ready to start.</p>
+
   <div class="actions score-actions">
     <button class="btn" id="startScore">Start Game</button>
-    <button class="btn primary" id="servingWon">Serving Team Won Rally</button>
-    <button class="btn" id="receivingWon">Receiving Team Won Rally</button>
+
+    <button class="btn primary" id="servingWon">
+      {{ 'Server Won Rally' if match_type == 'singles' else 'Serving Team Won Rally' }}
+    </button>
+
+    <button class="btn" id="receivingWon">
+      {{ 'Receiver Won Rally' if match_type == 'singles' else 'Receiving Team Won Rally' }}
+    </button>
+
     <button class="btn danger" id="resetScore">Reset Score</button>
   </div>
 </section>
@@ -70,20 +126,50 @@
     <strong id="lastCall">--</strong>
     <small id="callConfidence"></small>
   </article>
-  <article class="metric-card"><span>Bounce X</span><strong id="bounceX">--</strong><small></small></article>
-  <article class="metric-card"><span>Bounce Y</span><strong id="bounceY">--</strong><small></small></article>
-  <article class="metric-card"><span>Latency</span><strong id="latency">--</strong><small></small></article>
-  <article class="metric-card"><span>FPS</span><strong id="fps">--</strong><small></small></article>
-  <article class="metric-card"><span>Total Shots</span><strong id="totalShots">--</strong><small></small></article>
+
+  <article class="metric-card">
+    <span>Bounce X</span>
+    <strong id="bounceX">--</strong>
+    <small></small>
+  </article>
+
+  <article class="metric-card">
+    <span>Bounce Y</span>
+    <strong id="bounceY">--</strong>
+    <small></small>
+  </article>
+
+  <article class="metric-card">
+    <span>Latency</span>
+    <strong id="latency">--</strong>
+    <small></small>
+  </article>
+
+  <article class="metric-card">
+    <span>FPS</span>
+    <strong id="fps">--</strong>
+    <small></small>
+  </article>
+
+  <article class="metric-card">
+    <span>Total Shots</span>
+    <strong id="totalShots">--</strong>
+    <small></small>
+  </article>
 </section>
 
 <section class="two-column">
   <article class="panel">
     <div class="panel-head">
-      <div><p class="eyebrow">Court Map</p><h3>Rally path and serving position</h3></div>
+      <div>
+        <p class="eyebrow">Court Map</p>
+        <h3>Rally path and serving position</h3>
+      </div>
       <span id="courtZone" class="pill">Zone --</span>
     </div>
+
     <canvas id="courtCanvas" width="980" height="520"></canvas>
+
     <div class="trajectory-legend">
       <span><i class="dot start"></i> Start</span>
       <span><i class="dot trail"></i> Current rally trail</span>
@@ -96,6 +182,7 @@
   <article class="panel">
     <p class="eyebrow">System Status</p>
     <h3>Performance indicators</h3>
+
     <div class="status-list">
       <div><span>Average Confidence</span><strong id="avgConfidence">--</strong></div>
       <div><span>Average Latency</span><strong id="avgLatency">--</strong></div>
@@ -109,15 +196,33 @@
 
 <section class="panel">
   <div class="panel-head">
-    <div><p class="eyebrow">Event Log</p><h3>Latest tracked bounce events</h3></div>
+    <div>
+      <p class="eyebrow">Event Log</p>
+      <h3>Latest tracked bounce events</h3>
+    </div>
     <a class="btn" href="{{ url_for('reports') }}">Open Reports</a>
   </div>
+
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Time</th><th>System</th><th>Human</th><th>Correct</th><th>Confidence</th><th>Bounce</th><th>Latency</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>System</th>
+          <th>Human</th>
+          <th>Correct</th>
+          <th>Confidence</th>
+          <th>Bounce</th>
+          <th>Latency</th>
+        </tr>
+      </thead>
       <tbody id="eventTable"></tbody>
     </table>
   </div>
 </section>
+
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='dashboard.js') }}"></script>{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+{% endblock %}
