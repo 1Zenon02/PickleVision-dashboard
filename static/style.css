@@ -398,3 +398,12 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+.convert-panel {
+  margin-bottom: 18px;
+  border-style: dashed;
+}
+
+.convert-panel .score-message {
+  margin-top: 12px;
+}

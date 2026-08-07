@@ -15,11 +15,54 @@
   </div>
 
   <div class="actions">
-    <button class="btn" id="toggleSimulation">Pause Simulation</button>
-    <button class="btn danger" id="resetSession">New Session</button>
-    <a class="btn" href="/api/export/events.csv">Export CSV</a>
-  </div>
+  {% if match_type == 'singles' %}
+    <button class="btn primary" id="openConvertDoubles" type="button">
+      Add Partner / Convert to 2v2
+    </button>
+  {% endif %}
+
+  <button class="btn" id="toggleSimulation">Pause Simulation</button>
+  <button class="btn danger" id="resetSession">New Session</button>
+  <a class="btn" href="/api/export/events.csv">Export CSV</a>
+</div>
 </section>
+
+{% if match_type == 'singles' %}
+<section class="panel convert-panel" id="convertDoublesPanel" style="display: none;">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Convert Match</p>
+      <h3>Add partner and second opponent</h3>
+    </div>
+  </div>
+
+  <div class="form-grid">
+    <label>
+      Teammate Name
+      <input id="convertTeammateName" placeholder="Enter teammate name">
+    </label>
+
+    <label>
+      Opponent 2
+      <input id="convertOpponent2" placeholder="Enter second opponent">
+    </label>
+  </div>
+
+  <div class="actions score-actions">
+    <button class="btn primary" id="confirmConvertDoubles" type="button">
+      Convert to 2v2
+    </button>
+
+    <button class="btn" id="cancelConvertDoubles" type="button">
+      Cancel
+    </button>
+  </div>
+
+  <p class="score-message">
+    Note: converting from 1v1 to 2v2 will reset the score because the match format changed.
+  </p>
+</section>
+{% endif %}
 
 <section class="panel score-panel">
   <div class="panel-head score-head">

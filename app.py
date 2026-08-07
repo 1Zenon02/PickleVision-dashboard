@@ -1076,8 +1076,9 @@ def live_dashboard():
         teammate_name=session.get("teammate_name", "Teammate"),
         opponent_1=session.get("opponent_1", "Opponent 1"),
         opponent_2=session.get("opponent_2", "Opponent 2"),
-        match_type=current_match_type(),
+        match_type=session.get("match_type", "doubles"),
     )
+    
 
 
 @app.route("/history")
@@ -1176,6 +1177,41 @@ def api_score_rally():
         return jsonify(apply_rally_result(str(payload.get("winner", ""))))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/match/convert-to-doubles", methods=["POST"])
+@login_required
+def convert_to_doubles():
+    data = request.get_json(silent=True) or {}
+
+    teammate_name = str(data.get("teammate_name", "")).strip()
+    opponent_2 = str(data.get("opponent_2", "")).strip()
+
+    if not teammate_name:
+        teammate_name = "Teammate"
+
+    if not opponent_2:
+        opponent_2 = "Opponent 2"
+
+    # Convert current match from Singles to Doubles
+    session["match_type"] = "doubles"
+    session["teammate_name"] = teammate_name
+    session["opponent_2"] = opponent_2
+
+    # Reset score because the match format changed
+    session["score_state"] = fresh_score_state(started=False)
+
+    session.modified = True
+    ensure_session()
+
+    return jsonify({
+        "ok": True,
+        "message": "Match converted to doubles.",
+        "match_type": "doubles",
+        "teammate_name": teammate_name,
+        "opponent_2": opponent_2,
+        "score": score_payload(),
+    })
 
 
 @app.route("/api/update-live-data", methods=["POST"])
