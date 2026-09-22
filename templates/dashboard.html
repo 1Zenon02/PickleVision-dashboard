@@ -15,16 +15,25 @@
   </div>
 
   <div class="actions">
-  {% if match_type == 'singles' %}
-    <button class="btn primary" id="openConvertDoubles" type="button">
-      Add Partner / Convert to 2v2
-    </button>
-  {% endif %}
+    {% if match_type == 'singles' %}
+      <button class="btn primary" id="openConvertDoubles" type="button">
+        Add Partner / Convert to 2v2
+      </button>
+    {% endif %}
 
-  <button class="btn" id="toggleSimulation">Pause Simulation</button>
-  <button class="btn danger" id="resetSession">New Session</button>
-  <a class="btn" href="/api/export/events.csv">Export CSV</a>
-</div>
+    <button class="btn primary" id="saveMatch" type="button">
+      Save & End Game
+    </button>
+
+    <label class="autosave-toggle">
+      <input id="autoSaveSession" type="checkbox">
+      Auto-Save Session
+    </label>
+
+    <button class="btn" id="toggleSimulation" type="button">Pause Simulation</button>
+    <button class="btn danger" id="resetSession" type="button">New Session</button>
+    <a class="btn" href="/api/export/events.csv">Export CSV</a>
+  </div>
 </section>
 
 {% if match_type == 'singles' %}
@@ -59,7 +68,7 @@
   </div>
 
   <p class="score-message">
-    Note: converting from 1v1 to 2v2 will reset the score because the match format changed.
+    Converting from 1v1 to 2v2 will reset the score because the match format changed.
   </p>
 </section>
 {% endif %}
@@ -79,9 +88,11 @@
   </div>
 
   <div class="score-grid">
-
     <article class="score-card">
-      <span id="teamALabel">{{ 'Player' if match_type == 'singles' else 'Team A' }}</span>
+      <span id="teamALabel">
+        {{ 'Player' if match_type == 'singles' else 'Team A' }}
+      </span>
+
       <strong id="teamAScore">0</strong>
 
       {% if match_type == 'singles' %}
@@ -92,7 +103,10 @@
     </article>
 
     <article class="score-card">
-      <span id="teamBLabel">{{ 'Opponent' if match_type == 'singles' else 'Team B' }}</span>
+      <span id="teamBLabel">
+        {{ 'Opponent' if match_type == 'singles' else 'Team B' }}
+      </span>
+
       <strong id="teamBScore">0</strong>
 
       {% if match_type == 'singles' %}
@@ -143,23 +157,22 @@
 
       <small id="receivingSide">Waiting</small>
     </article>
-
   </div>
 
   <p id="scoreMessage" class="score-message">Ready to start.</p>
 
   <div class="actions score-actions">
-    <button class="btn" id="startScore">Start Game</button>
+    <button class="btn" id="startScore" type="button">Start Game</button>
 
-    <button class="btn primary" id="servingWon">
+    <button class="btn primary" id="servingWon" type="button">
       {{ 'Server Won Rally' if match_type == 'singles' else 'Serving Team Won Rally' }}
     </button>
 
-    <button class="btn" id="receivingWon">
+    <button class="btn" id="receivingWon" type="button">
       {{ 'Receiver Won Rally' if match_type == 'singles' else 'Receiving Team Won Rally' }}
     </button>
 
-    <button class="btn danger" id="resetScore">Reset Score</button>
+    <button class="btn danger" id="resetScore" type="button">Reset Score</button>
   </div>
 </section>
 
@@ -208,6 +221,7 @@
         <p class="eyebrow">Court Map</p>
         <h3>Rally path and serving position</h3>
       </div>
+
       <span id="courtZone" class="pill">Zone --</span>
     </div>
 
@@ -243,6 +257,7 @@
       <p class="eyebrow">Event Log</p>
       <h3>Latest tracked bounce events</h3>
     </div>
+
     <a class="btn" href="{{ url_for('reports') }}">Open Reports</a>
   </div>
 
@@ -259,13 +274,45 @@
           <th>Latency</th>
         </tr>
       </thead>
+
       <tbody id="eventTable"></tbody>
     </table>
   </div>
 </section>
 
+<div class="modal-backdrop" id="saveMatchModal" hidden>
+  <div class="modal-card">
+    <p class="eyebrow">End Match Session</p>
+
+    <h3>Are you sure you want to end and save this match?</h3>
+
+    <p class="score-message">
+      The system will save the current score, match players, shot locations,
+      point logs, telemetry, and analytics into the match history.
+    </p>
+
+    <div class="modal-actions">
+      <button class="btn" id="cancelSaveMatch" type="button">
+        Cancel
+      </button>
+
+      <button class="btn primary" id="saveMatchReports" type="button">
+        Save & View Reports
+      </button>
+
+      <button class="btn" id="saveMatchSetup" type="button">
+        Save & New Match
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-toast" id="dashboardToast" hidden>
+  Match saved successfully.
+</div>
+
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+<script src="{{ url_for('static', filename='dashboard.js') }}?v=save-filter-final"></script>
 {% endblock %}

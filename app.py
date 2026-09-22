@@ -154,18 +154,37 @@ def init_db() -> None:
                 opponent_1 TEXT,
                 opponent_2 TEXT,
                 input_mode TEXT NOT NULL DEFAULT 'simulation',
+                match_type TEXT DEFAULT 'doubles',
+                match_status TEXT DEFAULT 'in_progress',
+                saved_game_id INTEGER,
+                completed_at TEXT,
                 FOREIGN KEY(user_id) REFERENCES users(id),
                 FOREIGN KEY(player_id) REFERENCES players(id)
             )
             """
         )
-        # Migration support for older v2 databases.
+
+        # Migration support for older local databases.
         if not column_exists(conn, "events", "game_id"):
             conn.execute("ALTER TABLE events ADD COLUMN game_id INTEGER")
+
         if not column_exists(conn, "sessions", "user_id"):
             conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER")
+
         if not column_exists(conn, "sessions", "player_id"):
             conn.execute("ALTER TABLE sessions ADD COLUMN player_id INTEGER")
+
+        if not column_exists(conn, "sessions", "match_type"):
+            conn.execute("ALTER TABLE sessions ADD COLUMN match_type TEXT DEFAULT 'doubles'")
+
+        if not column_exists(conn, "sessions", "match_status"):
+            conn.execute("ALTER TABLE sessions ADD COLUMN match_status TEXT DEFAULT 'in_progress'")
+
+        if not column_exists(conn, "sessions", "saved_game_id"):
+            conn.execute("ALTER TABLE sessions ADD COLUMN saved_game_id INTEGER")
+
+        if not column_exists(conn, "sessions", "completed_at"):
+            conn.execute("ALTER TABLE sessions ADD COLUMN completed_at TEXT")
 
 
 def current_user() -> Optional[Dict[str, Any]]:
@@ -218,15 +237,25 @@ def ensure_session() -> None:
     user_id = user["id"] if user else None
     player_name = session.get("player_name") or (user["full_name"] if user else "Player 1")
     player_id = session.get("player_id")
+
     if user_id and not player_id:
         player_id = get_or_create_player_for_user(user_id, player_name)
         session["player_id"] = player_id
+        session.modified = True
+
+    match_type = current_match_type()
+    match_status = session.get("match_status", "in_progress")
+    saved_game_id = session.get("saved_game_id")
+    completed_at = session.get("completed_at")
+
     with db() as conn:
+        ensure_session_save_columns(conn)
         conn.execute(
             """
             INSERT OR IGNORE INTO sessions
-            (session_id, created_at, user_id, player_id, player_name, teammate_name, opponent_1, opponent_2, input_mode)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (session_id, created_at, user_id, player_id, player_name, teammate_name, opponent_1, opponent_2,
+             input_mode, match_type, match_status, saved_game_id, completed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 SESSION_ID,
@@ -238,6 +267,39 @@ def ensure_session() -> None:
                 session.get("opponent_1", "Opponent 1"),
                 session.get("opponent_2", "Opponent 2"),
                 "simulation",
+                match_type,
+                match_status,
+                saved_game_id,
+                completed_at,
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE sessions
+            SET user_id = ?,
+                player_id = ?,
+                player_name = ?,
+                teammate_name = ?,
+                opponent_1 = ?,
+                opponent_2 = ?,
+                match_type = ?,
+                match_status = ?,
+                saved_game_id = ?,
+                completed_at = ?
+            WHERE session_id = ?
+            """,
+            (
+                user_id,
+                player_id,
+                player_name,
+                session.get("teammate_name", "Teammate"),
+                session.get("opponent_1", "Opponent 1"),
+                session.get("opponent_2", "Opponent 2"),
+                match_type,
+                match_status,
+                saved_game_id,
+                completed_at,
+                SESSION_ID,
             ),
         )
 
@@ -251,15 +313,24 @@ def court_zone(x: float, y: float) -> str:
 
 def team_label(team_key: str) -> str:
     """Return the display name for Team A or Team B based on the current setup."""
+    if current_match_type() == "singles":
+        if team_key == "A":
+            return session.get("player_name", "Player 1")
+        return session.get("opponent_1", "Opponent 1")
+
     if team_key == "A":
         return f"{session.get('player_name', 'Player 1')} / {session.get('teammate_name', 'Teammate')}"
+
     return f"{session.get('opponent_1', 'Opponent 1')} / {session.get('opponent_2', 'Opponent 2')}"
-
-
 
 
 def team_players(team_key: str) -> List[str]:
     """Return player names for Team A or Team B."""
+    if current_match_type() == "singles":
+        if team_key == "A":
+            return [session.get("player_name", "Player 1")]
+        return [session.get("opponent_1", "Opponent 1")]
+
     if team_key == "A":
         return [
             session.get("player_name", "Player 1"),
@@ -276,9 +347,13 @@ def current_server_name(state: Optional[Dict[str, Any]] = None) -> str:
     state = state or get_score_state()
     if not state.get("started") or int(state.get("server_number", 0)) == 0:
         return "Not assigned yet"
+
     players = team_players(str(state.get("serving_team", "A")))
+    if current_match_type() == "singles":
+        return players[0] if players else "Server"
+
     index = 0 if int(state.get("server_number", 1)) == 1 else 1
-    return players[index]
+    return players[index] if index < len(players) else players[0]
 
 
 def team_short_name(team_key: Optional[str]) -> Optional[str]:
@@ -841,6 +916,185 @@ def role_dashboard_endpoint(user: Dict[str, Any]) -> str:
     return "player_dashboard" if user.get("role") == "player" else "coach_dashboard"
 
 
+def safe_json_loads(value: Any, default: Any = None) -> Any:
+    """Safely load JSON stored in the games.notes column."""
+    if default is None:
+        default = {}
+
+    if not value:
+        return default
+
+    if isinstance(value, (dict, list)):
+        return value
+
+    try:
+        return json.loads(str(value))
+    except Exception:
+        return default
+
+
+def serialize_game_row(game: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert a games table row into a clean dashboard object."""
+    summary = safe_json_loads(game.get("notes"), {})
+    has_live_summary = isinstance(summary, dict) and bool(summary)
+
+    match_status = summary.get("match_status") or "completed"
+    match_type = summary.get("match_type") or "manual"
+    completed_at = summary.get("completed_at") or game.get("created_at") or game.get("date_played")
+    final_score_call = summary.get("final_score_call") or f"{int(game.get('player_score') or 0)} - {int(game.get('opponent_score') or 0)}"
+    total_events = int(summary.get("total_events") or 0) if has_live_summary else 0
+
+    clean_notes = "Saved from Live Session" if has_live_summary else (game.get("notes") or "-")
+
+    return {
+        "id": int(game.get("id")),
+        "date_played": game.get("date_played"),
+        "opponent_name": game.get("opponent_name") or "Opponent",
+        "player_score": int(game.get("player_score") or 0),
+        "opponent_score": int(game.get("opponent_score") or 0),
+        "result": game.get("result") or "Draw",
+        "notes": game.get("notes"),
+        "clean_notes": clean_notes,
+        "match_status": match_status,
+        "match_type": match_type,
+        "completed_at": completed_at,
+        "final_score_call": final_score_call,
+        "total_events": total_events,
+        "summary": summary if has_live_summary else {},
+    }
+
+
+def get_games_for_player(player_id: int) -> List[Dict[str, Any]]:
+    """Return all saved games for one player."""
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM games
+            WHERE player_id = ?
+            ORDER BY date_played DESC, id DESC
+            """,
+            (player_id,),
+        ).fetchall()
+
+    return [serialize_game_row(dict(row)) for row in rows]
+
+
+def get_game_for_player(player_id: int, game_id: int) -> Optional[Dict[str, Any]]:
+    """Return one saved game only if it belongs to the current player."""
+    with db() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM games
+            WHERE id = ? AND player_id = ?
+            """,
+            (game_id, player_id),
+        ).fetchone()
+
+    return serialize_game_row(dict(row)) if row else None
+
+
+def get_events_for_game(*args) -> List[Dict[str, Any]]:
+    """Return events linked to one saved game.
+
+    Supports both old calls:
+    get_events_for_game(game_id, limit)
+    and newer secured calls:
+    get_events_for_game(player_id, game_id, limit)
+    """
+    player_id: Optional[int] = None
+    limit = 1000
+
+    if len(args) == 1:
+        game_id = int(args[0])
+    elif len(args) == 2:
+        game_id = int(args[0])
+        limit = int(args[1])
+    elif len(args) >= 3:
+        player_id = int(args[0])
+        game_id = int(args[1])
+        limit = int(args[2])
+    else:
+        return []
+
+    with db() as conn:
+        if player_id is None:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM events
+                WHERE game_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (game_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT e.*
+                FROM events e
+                JOIN games g ON g.id = e.game_id
+                WHERE e.game_id = ?
+                  AND g.player_id = ?
+                ORDER BY e.id DESC
+                LIMIT ?
+                """,
+                (game_id, player_id, limit),
+            ).fetchall()
+
+    return rows_to_dicts(rows)[::-1]
+
+
+
+def compute_game_list_stats(games: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Compute win/loss statistics from a list of saved game objects."""
+    total_games = len(games)
+    wins = sum(1 for game in games if game.get("result") == "Win")
+    losses = sum(1 for game in games if game.get("result") == "Loss")
+    draws = sum(1 for game in games if game.get("result") == "Draw")
+    win_pct = (wins / total_games * 100) if total_games else 0
+
+    return {
+        "total_games": total_games,
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+        "winning_percentage": round(win_pct, 1),
+    }
+
+
+def build_player_dashboard_payload(player_id: int, selected_match_id: Optional[int] = None) -> Dict[str, Any]:
+    """Build overall or selected-match dashboard data for the Player Dashboard."""
+    games = get_games_for_player(player_id)
+    selected_game = None
+
+    if selected_match_id:
+        selected_game = get_game_for_player(player_id, selected_match_id)
+
+    if selected_game:
+        scoped_games = [selected_game]
+        events = get_events_for_game(player_id, int(selected_game["id"]), 1000)
+    else:
+        scoped_games = games
+        events = get_events_for_player(player_id, 1000)
+
+    metrics = compute_metrics(events)
+    scoped_stats = compute_game_list_stats(scoped_games)
+    overall_stats = compute_game_list_stats(games)
+    trajectory_data = build_rally_trajectory(events[-10:], max_points=120)
+
+    return {
+        "selected_match_id": selected_game["id"] if selected_game else None,
+        "selected_game": selected_game,
+        "games": games,
+        "stats": scoped_stats,
+        "overall_stats": overall_stats,
+        "metrics": metrics,
+        "events": events[-25:],
+        "trajectory_data": trajectory_data,
+    }
+
+
 @app.before_request
 def before_request() -> None:
     init_db()
@@ -1004,35 +1258,102 @@ def dashboard():
     user = current_user() or {}
     return redirect(url_for(role_dashboard_endpoint(user)))
 
+def get_events_for_game(*args) -> List[Dict[str, Any]]:
+    """Return events linked to one saved game.
+
+    Supports both old calls:
+    get_events_for_game(game_id, limit)
+    and newer secured calls:
+    get_events_for_game(player_id, game_id, limit)
+    """
+    player_id: Optional[int] = None
+    limit = 1000
+
+    if len(args) == 1:
+        game_id = int(args[0])
+    elif len(args) == 2:
+        game_id = int(args[0])
+        limit = int(args[1])
+    elif len(args) >= 3:
+        player_id = int(args[0])
+        game_id = int(args[1])
+        limit = int(args[2])
+    else:
+        return []
+
+    with db() as conn:
+        if player_id is None:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM events
+                WHERE game_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (game_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT e.*
+                FROM events e
+                JOIN games g ON g.id = e.game_id
+                WHERE e.game_id = ?
+                  AND g.player_id = ?
+                ORDER BY e.id DESC
+                LIMIT ?
+                """,
+                (game_id, player_id, limit),
+            ).fetchall()
+
+    return rows_to_dicts(rows)[::-1]
+
 
 @app.route("/player-dashboard")
 @login_required
 def player_dashboard():
     user = current_user() or {}
+
     if user.get("role") != "player":
         return redirect(url_for("coach_dashboard"))
 
     player_id = session.get("player_id")
+
     if not player_id:
-        player_id = get_or_create_player_for_user(int(user["id"]), user.get("full_name", "Player"))
+        player_id = get_or_create_player_for_user(
+            int(user["id"]),
+            user.get("full_name", "Player")
+        )
         session["player_id"] = player_id
         session.modified = True
 
-    player = get_player_by_id(int(player_id)) or {"player_name": user.get("full_name", "Player")}
-    stats = player_stats(int(player_id))
-    events = get_events_for_player(int(player_id), 500)
-    if not events:
-        events = get_all_user_events(int(user["id"]), 500)
-    metrics = compute_metrics(events)
-    trajectory_data = build_rally_trajectory(events[-10:], max_points=120)
+    player = get_player_by_id(int(player_id)) or {
+        "player_name": user.get("full_name", "Player")
+    }
+
+    selected_match_id_raw = request.args.get("match_id")
+    selected_match_id = None
+
+    try:
+        selected_match_id = int(selected_match_id_raw) if selected_match_id_raw else None
+    except (TypeError, ValueError):
+        selected_match_id = None
+
+    payload = build_player_dashboard_payload(int(player_id), selected_match_id)
 
     return render_template(
         "player_dashboard.html",
         player=player,
-        stats=stats,
-        metrics=metrics,
-        events=events[-12:],
-        trajectory_data=trajectory_data,
+        stats=payload["stats"],
+        overall_stats=payload["overall_stats"],
+        saved_matches=payload["games"],
+        selected_match=payload["selected_game"],
+        selected_match_id=payload["selected_match_id"],
+        metrics=payload["metrics"],
+        events=payload["events"],
+        trajectory_data=payload["trajectory_data"],
+        active_tab=request.args.get("tab", "matches"),
     )
 
 
@@ -1066,6 +1387,23 @@ def coach_dashboard():
         trajectory_data=trajectory_data,
     )
 
+@app.route("/api/player-dashboard-data")
+@login_required
+def api_player_dashboard_data():
+    player_id = session.get("player_id")
+    if not player_id:
+        return jsonify({"error": "No player profile found."}), 400
+
+    match_id_raw = request.args.get("match_id")
+    selected_match_id = None
+
+    if match_id_raw:
+        try:
+            selected_match_id = int(match_id_raw)
+        except ValueError:
+            selected_match_id = None
+
+    return jsonify(build_player_dashboard_payload(int(player_id), selected_match_id))
 
 @app.route("/live-dashboard")
 @login_required
@@ -1146,6 +1484,133 @@ def new_game():
         return redirect(url_for("games"))
     return render_template("new_game.html", today=datetime.now().date().isoformat())
 
+def ensure_session_save_columns(conn: sqlite3.Connection) -> None:
+    """Make sure the sessions table has the columns needed for saving matches."""
+    if not column_exists(conn, "sessions", "match_type"):
+        conn.execute("ALTER TABLE sessions ADD COLUMN match_type TEXT DEFAULT 'doubles'")
+
+    if not column_exists(conn, "sessions", "match_status"):
+        conn.execute("ALTER TABLE sessions ADD COLUMN match_status TEXT DEFAULT 'in_progress'")
+
+    if not column_exists(conn, "sessions", "saved_game_id"):
+        conn.execute("ALTER TABLE sessions ADD COLUMN saved_game_id INTEGER")
+
+    if not column_exists(conn, "sessions", "completed_at"):
+        conn.execute("ALTER TABLE sessions ADD COLUMN completed_at TEXT")
+
+def save_current_match_to_database() -> Dict[str, Any]:
+    """Save the current live match/session into the games table and link events to it."""
+    ensure_session()
+
+    if session.get("saved_game_id"):
+        return {
+            "ok": True,
+            "already_saved": True,
+            "game_id": int(session.get("saved_game_id")),
+            "message": "This match was already saved.",
+        }
+
+    player_id = session.get("player_id")
+    if not player_id:
+        raise ValueError("No player profile is connected to this session.")
+
+    score = score_payload()
+    match_type = current_match_type()
+    events = get_recent_events(1000)
+    metrics = compute_metrics(events)
+
+    team_a_score = int(score.get("team_a_score", 0))
+    team_b_score = int(score.get("team_b_score", 0))
+
+    if team_a_score > team_b_score:
+        result = "Win"
+    elif team_a_score < team_b_score:
+        result = "Loss"
+    else:
+        result = "Draw"
+
+    if match_type == "singles":
+        opponent_name = session.get("opponent_1", "Opponent 1")
+    else:
+        opponent_name = f"{session.get('opponent_1', 'Opponent 1')} / {session.get('opponent_2', 'Opponent 2')}"
+
+    completed_at = datetime.now().isoformat(timespec="seconds")
+
+    match_summary = {
+        "match_type": match_type,
+        "match_status": "completed",
+        "completed_at": completed_at,
+        "player_name": session.get("player_name", "Player 1"),
+        "teammate_name": session.get("teammate_name", ""),
+        "opponent_1": session.get("opponent_1", "Opponent 1"),
+        "opponent_2": session.get("opponent_2", ""),
+        "team_a_name": score.get("team_a_name"),
+        "team_b_name": score.get("team_b_name"),
+        "final_score_call": score.get("score_call"),
+        "team_a_score": team_a_score,
+        "team_b_score": team_b_score,
+        "total_events": len(events),
+        "metrics": metrics,
+    }
+
+    with db() as conn:
+        ensure_session_save_columns(conn)
+
+        cur = conn.execute(
+            """
+            INSERT INTO games
+            (player_id, opponent_name, player_score, opponent_score, result, date_played, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(player_id),
+                opponent_name,
+                team_a_score,
+                team_b_score,
+                result,
+                datetime.now().date().isoformat(),
+                json.dumps(match_summary),
+                completed_at,
+            ),
+        )
+
+        game_id = int(cur.lastrowid)
+
+        conn.execute(
+            """
+            UPDATE events
+            SET game_id = ?
+            WHERE session_id = ?
+              AND game_id IS NULL
+            """,
+            (game_id, SESSION_ID),
+        )
+
+        conn.execute(
+            """
+            UPDATE sessions
+            SET match_type = ?,
+                match_status = ?,
+                saved_game_id = ?,
+                completed_at = ?
+            WHERE session_id = ?
+            """,
+            (match_type, "completed", game_id, completed_at, SESSION_ID),
+        )
+
+    session["match_status"] = "completed"
+    session["saved_game_id"] = game_id
+    session["completed_at"] = completed_at
+    session.modified = True
+
+    return {
+        "ok": True,
+        "already_saved": False,
+        "game_id": game_id,
+        "message": "Match saved successfully.",
+        "summary": match_summary,
+    }
+
 
 @app.route("/api/score")
 @login_required
@@ -1213,6 +1678,47 @@ def convert_to_doubles():
         "score": score_payload(),
     })
 
+@app.route("/api/match/save", methods=["POST"])
+@login_required
+def api_save_match():
+    try:
+        result = save_current_match_to_database()
+        return jsonify(result)
+    except ValueError as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": f"Failed to save match: {exc}",
+        }), 500
+
+@app.route("/match/convert-to-doubles", methods=["POST"])
+@login_required
+def convert_to_doubles_form():
+    teammate_name = request.form.get("teammate_name", "").strip()
+    opponent_2 = request.form.get("opponent_2", "").strip()
+
+    if not teammate_name:
+        teammate_name = "Teammate"
+
+    if not opponent_2:
+        opponent_2 = "Opponent 2"
+
+    session["match_type"] = "doubles"
+    session["teammate_name"] = teammate_name
+    session["opponent_2"] = opponent_2
+
+    # Reset score because match format changed from 1v1 to 2v2
+    session["score_state"] = fresh_score_state(started=False)
+    session.modified = True
+
+    ensure_session()
+
+    flash("Match converted to 2v2 successfully.", "success")
+    return redirect(url_for("live_dashboard"))
 
 @app.route("/api/update-live-data", methods=["POST"])
 def api_update_live_data():
@@ -1324,12 +1830,23 @@ def api_toggle_simulation():
 @login_required
 def api_reset_session():
     global SESSION_ID, LAST_EVENT_TS
+
     SESSION_ID = datetime.now().strftime("S%Y%m%d%H%M%S")
     LAST_EVENT_TS = 0.0
+
     session["score_state"] = fresh_score_state(started=False)
+    session["match_status"] = "in_progress"
+    session.pop("saved_game_id", None)
+    session.pop("completed_at", None)
+
     session.modified = True
     ensure_session()
-    return jsonify({"session_id": SESSION_ID, "score": score_payload()})
+
+    return jsonify({
+        "session_id": SESSION_ID,
+        "match_status": "in_progress",
+        "score": score_payload(),
+    })
 
 
 @app.route("/api/export/events.csv")

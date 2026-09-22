@@ -1,104 +1,331 @@
 {% extends "base.html" %}
-{% block title %}Player Dashboard · Project PickleVision{% endblock %}
+{% block title %}Player Dashboard{% endblock %}
+
 {% block content %}
-<section class="session-strip card">
+
+{% set match_rows = saved_matches if saved_matches is defined else stats.games %}
+{% set selected = selected_match if selected_match is defined else none %}
+{% set selected_id = selected_match_id if selected_match_id is defined else none %}
+
+<section class="session-strip">
   <div>
     <p class="eyebrow">Player Dashboard</p>
     <h2>{{ player.player_name }}</h2>
   </div>
+
   <div class="actions">
     <a class="btn primary" href="{{ url_for('setup') }}">Start Match Setup</a>
     <a class="btn" href="{{ url_for('live_dashboard') }}">Live Session</a>
   </div>
 </section>
 
-<section class="role-dashboard card panel">
-  <div class="tab-bar" role="tablist">
-    <button class="tab-button active" data-tab="my-matches" type="button">My Matches</button>
-    <button class="tab-button" data-tab="my-statistics" type="button">My Statistics</button>
-    <button class="tab-button" data-tab="my-trajectory" type="button">My Trajectory</button>
-    <button class="tab-button" data-tab="my-reports" type="button">My Reports</button>
+<section class="panel role-panel">
+
+  <div class="role-tabs">
+    <button class="role-tab active" type="button" data-tab="matches">My Matches</button>
+    <button class="role-tab" type="button" data-tab="statistics">My Statistics</button>
+    <button class="role-tab" type="button" data-tab="trajectory">My Trajectory</button>
+    <button class="role-tab" type="button" data-tab="reports">My Reports</button>
   </div>
 
-  <section class="role-tab-panel active" id="my-matches">
+  {% if selected %}
+    <div class="selected-match-banner">
+      <div>
+        <p class="eyebrow">Selected Match</p>
+        <strong>
+          Viewing Match: {{ selected.date_played }} vs {{ selected.opponent_name }}
+        </strong>
+        <small>
+          Score {{ selected.player_score }} - {{ selected.opponent_score }}
+          · {{ selected.result }}
+        </small>
+      </div>
+
+      <a class="btn" href="{{ url_for('player_dashboard') }}">
+        Clear Selection / View Overall
+      </a>
+    </div>
+  {% else %}
+    <div class="selected-match-banner overall">
+      <div>
+        <p class="eyebrow">Overall View</p>
+        <strong>Viewing Overall / All-Time Aggregate Statistics</strong>
+        <small>Select a match below to filter statistics, trajectory, and reports.</small>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="role-tab-content active" id="matches">
     <div class="panel-head">
-      <div><p class="eyebrow">My Matches</p><h3>Saved match records</h3></div>
+      <div>
+        <p class="eyebrow">My Matches</p>
+        <h3>Saved match records</h3>
+      </div>
+
       <a class="btn" href="{{ url_for('new_game') }}">Add Match</a>
     </div>
+
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Date</th><th>Opponent</th><th>Score</th><th>Result</th><th>Notes</th></tr></thead>
-        <tbody>
-        {% for game in stats.games %}
+        <thead>
           <tr>
-            <td>{{ game.date_played }}</td>
-            <td>{{ game.opponent_name }}</td>
-            <td>{{ game.player_score }} - {{ game.opponent_score }}</td>
-            <td><span class="badge {{ 'in' if game.result == 'Win' else 'out' }}">{{ game.result }}</span></td>
-            <td>{{ game.notes or '-' }}</td>
+            <th>Date</th>
+            <th>Opponent</th>
+            <th>Score</th>
+            <th>Result</th>
+            <th>Type</th>
+            <th>Events</th>
+            <th>Notes</th>
+            <th>Action</th>
           </tr>
-        {% else %}
-          <tr><td colspan="5">No matches recorded yet.</td></tr>
-        {% endfor %}
+        </thead>
+
+        <tbody>
+          {% for game in match_rows %}
+            {% set raw_notes = game.notes|string if game.notes else '-' %}
+
+            <tr class="{% if selected_id == game.id %}selected-row{% endif %}">
+              <td>{{ game.date_played }}</td>
+              <td>{{ game.opponent_name }}</td>
+              <td>{{ game.player_score }} - {{ game.opponent_score }}</td>
+              <td>
+                <span class="result-pill {{ game.result|lower }}">
+                  {{ game.result }}
+                </span>
+              </td>
+
+              <td>
+                {% if game.match_type is defined %}
+                  {{ game.match_type|capitalize }}
+                {% elif raw_notes.startswith('{') %}
+                  Saved
+                {% else %}
+                  Manual
+                {% endif %}
+              </td>
+
+              <td>
+                {% if game.total_events is defined %}
+                  {{ game.total_events }}
+                {% else %}
+                  --
+                {% endif %}
+              </td>
+
+              <td>
+                {% if game.clean_notes is defined %}
+                  {{ game.clean_notes }}
+                {% elif raw_notes.startswith('{') %}
+                  Saved from Live Session
+                {% else %}
+                  {{ raw_notes }}
+                {% endif %}
+              </td>
+
+              <td>
+                <a class="btn small" href="{{ url_for('player_dashboard', match_id=game.id) }}">
+                  View Analysis
+                </a>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="8">No saved matches yet.</td>
+            </tr>
+          {% endfor %}
         </tbody>
       </table>
     </div>
-  </section>
+  </div>
 
-  <section class="role-tab-panel" id="my-statistics">
-    <div class="panel-head"><div><p class="eyebrow">My Statistics</p><h3>Player and system summary</h3></div></div>
-    <div class="dashboard-grid compact">
-      <article class="metric-card card"><span>Total Matches</span><strong>{{ stats.total_games }}</strong><small></small></article>
-      <article class="metric-card card"><span>Wins</span><strong>{{ stats.wins }}</strong><small></small></article>
-      <article class="metric-card card"><span>Losses</span><strong>{{ stats.losses }}</strong><small></small></article>
-      <article class="metric-card card"><span>Win %</span><strong>{{ stats.winning_percentage }}%</strong><small></small></article>
-      <article class="metric-card card"><span>Total Shots</span><strong>{{ metrics.total_shots }}</strong><small></small></article>
-      <article class="metric-card card"><span>Accuracy</span><strong>{{ (metrics.accuracy * 100)|round|int }}%</strong><small></small></article>
-    </div>
-    <div class="status-list role-status-list">
-      <div><span>Average Confidence</span><strong>{{ (metrics.avg_confidence * 100)|round|int }}%</strong></div>
-      <div><span>Average Latency</span><strong>{{ metrics.avg_latency_ms }} ms</strong></div>
-      <div><span>Average FPS</span><strong>{{ metrics.avg_fps }}</strong></div>
-      <div><span>IN / OUT Calls</span><strong>{{ metrics.in_calls }} / {{ metrics.out_calls }}</strong></div>
-    </div>
-  </section>
+  <div class="role-tab-content" id="statistics">
+    <p class="eyebrow">My Statistics</p>
 
-  <section class="role-tab-panel" id="my-trajectory">
-    <div class="panel-head"><div><p class="eyebrow">My Trajectory</p><h3>Latest tracked rally path</h3></div></div>
-    <canvas id="playerTrajectoryCanvas" width="980" height="520"></canvas>
-    <div class="table-wrap role-table-space">
-      <table>
-        <thead><tr><th>Time</th><th>Call</th><th>Bounce</th><th>Zone</th><th>Confidence</th></tr></thead>
-        <tbody>
-        {% for event in events|reverse %}
-          <tr>
-            <td>{{ event.timestamp.replace('T', ' ') }}</td>
-            <td><span class="badge {{ event.system_call|lower }}">{{ event.system_call }}</span></td>
-            <td>{{ event.bounce_x|round(2) }}, {{ event.bounce_y|round(2) }}</td>
-            <td>{{ event.court_zone }}</td>
-            <td>{{ (event.confidence * 100)|round|int }}%</td>
-          </tr>
-        {% else %}
-          <tr><td colspan="5">No trajectory events yet.</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+    {% if selected %}
+      <h3>Statistics for {{ selected.date_played }} vs {{ selected.opponent_name }}</h3>
+    {% else %}
+      <h3>Overall player statistics</h3>
+    {% endif %}
 
-  <section class="role-tab-panel" id="my-reports">
-    <div class="panel-head">
-      <div><p class="eyebrow">My Reports</p><h3>Export and validation metrics</h3></div>
-      <div class="actions"><a class="btn" href="{{ url_for('reports') }}">Open Full Reports</a><a class="btn" href="{{ url_for('export_events_csv') }}">Export CSV</a></div>
-    </div>
-    <div class="dashboard-grid compact">
-      <article class="metric-card card"><span>Precision</span><strong>{{ (metrics.precision * 100)|round|int }}%</strong><small></small></article>
-      <article class="metric-card card"><span>Recall</span><strong>{{ (metrics.recall * 100)|round|int }}%</strong><small></small></article>
-      <article class="metric-card card"><span>F1-score</span><strong>{{ (metrics.f1_score * 100)|round|int }}%</strong><small></small></article>
-      <article class="metric-card card"><span>MAE</span><strong>{{ metrics.mae_mm }} mm</strong><small></small></article>
-    </div>
-  </section>
+    <section class="dashboard-grid">
+      <article class="metric-card">
+        <span>Total Matches</span>
+        <strong>
+          {% if selected %}
+            1
+          {% else %}
+            {{ stats.total_games }}
+          {% endif %}
+        </strong>
+        <small>Saved records</small>
+      </article>
+
+      <article class="metric-card">
+        <span>Match Result</span>
+        <strong>
+          {% if selected %}
+            {{ selected.result }}
+          {% else %}
+            {{ stats.wins }}W / {{ stats.losses }}L
+          {% endif %}
+        </strong>
+        <small>Player outcome</small>
+      </article>
+
+      <article class="metric-card">
+        <span>System Accuracy</span>
+        <strong>{{ (metrics.accuracy * 100)|round(0) }}%</strong>
+        <small>Filtered telemetry</small>
+      </article>
+
+      <article class="metric-card">
+        <span>Average Confidence</span>
+        <strong>{{ (metrics.avg_confidence * 100)|round(0) }}%</strong>
+        <small>AI line-call confidence</small>
+      </article>
+
+      <article class="metric-card">
+        <span>Total Shots</span>
+        <strong>{{ metrics.total_shots }}</strong>
+        <small>Tracked events</small>
+      </article>
+
+      <article class="metric-card">
+        <span>Average Latency</span>
+        <strong>{{ metrics.avg_latency_ms }} ms</strong>
+        <small>Processing delay</small>
+      </article>
+    </section>
+  </div>
+
+  <div class="role-tab-content" id="trajectory">
+    <p class="eyebrow">My Trajectory</p>
+
+    {% if selected %}
+      <h3>Trajectory for {{ selected.date_played }} vs {{ selected.opponent_name }}</h3>
+    {% else %}
+      <h3>Overall trajectory view</h3>
+    {% endif %}
+
+    <p class="muted-text">
+      This court map uses the telemetry events linked to the selected match. If no match is selected,
+      it shows the latest overall player events.
+    </p>
+
+    <canvas
+      id="roleTrajectoryCanvas"
+      width="980"
+      height="520"
+      data-trajectory='{{ trajectory_data|tojson }}'>
+    </canvas>
+  </div>
+
+  <div class="role-tab-content" id="reports">
+    <p class="eyebrow">My Reports</p>
+
+    {% if selected %}
+      <h3>Match report: {{ selected.date_played }} vs {{ selected.opponent_name }}</h3>
+
+      <div class="report-summary-grid">
+        <article class="score-card">
+          <span>Final Score</span>
+          <strong>{{ selected.player_score }} - {{ selected.opponent_score }}</strong>
+          <small>{{ selected.result }}</small>
+        </article>
+
+        <article class="score-card">
+          <span>Match Type</span>
+          <strong>
+            {% if selected.match_type is defined %}
+              {{ selected.match_type|capitalize }}
+            {% else %}
+              Saved Match
+            {% endif %}
+          </strong>
+          <small>Saved from Live Session</small>
+        </article>
+
+        <article class="score-card">
+          <span>Total Events</span>
+          <strong>{{ metrics.total_shots }}</strong>
+          <small>Saved telemetry</small>
+        </article>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>System Call</th>
+              <th>Human Call</th>
+              <th>Correct</th>
+              <th>Confidence</th>
+              <th>Bounce</th>
+              <th>Latency</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {% for event in events %}
+              <tr>
+                <td>{{ event.timestamp }}</td>
+                <td>{{ event.system_call }}</td>
+                <td>{{ event.human_call or '--' }}</td>
+                <td>
+                  {% if event.correct is none %}
+                    --
+                  {% elif event.correct %}
+                    Yes
+                  {% else %}
+                    No
+                  {% endif %}
+                </td>
+                <td>{{ (event.confidence * 100)|round(0) }}%</td>
+                <td>{{ event.bounce_x }}, {{ event.bounce_y }}</td>
+                <td>{{ event.latency_ms }} ms</td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="7">No telemetry events linked to this match yet.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <h3>Overall report</h3>
+
+      <p class="muted-text">
+        Select a saved match from My Matches to view a match-specific report.
+      </p>
+
+      <div class="report-summary-grid">
+        <article class="score-card">
+          <span>Total Matches</span>
+          <strong>{{ stats.total_games }}</strong>
+          <small>Saved records</small>
+        </article>
+
+        <article class="score-card">
+          <span>Wins</span>
+          <strong>{{ stats.wins }}</strong>
+          <small>Overall wins</small>
+        </article>
+
+        <article class="score-card">
+          <span>Tracked Shots</span>
+          <strong>{{ metrics.total_shots }}</strong>
+          <small>Overall telemetry</small>
+        </article>
+      </div>
+    {% endif %}
+  </div>
+
 </section>
-<script type="application/json" id="playerTrajectoryData">{{ trajectory_data|tojson }}</script>
+
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='role_dashboard.js') }}"></script>{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='role_dashboard.js') }}?v=match-filter-final"></script>
+{% endblock %}

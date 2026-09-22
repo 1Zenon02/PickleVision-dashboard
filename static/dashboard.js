@@ -18,9 +18,56 @@ function setText(id, value) {
   if (el) el.textContent = value;
 }
 
-/* =========================
-   SCORE DISPLAY
-========================= */
+let matchSaved = false;
+let autoSaveTriggered = false;
+
+function showToast(message) {
+  const toast = document.getElementById('dashboardToast');
+  if (!toast) {
+    alert(message);
+    return;
+  }
+
+  toast.textContent = message;
+  toast.hidden = false;
+
+  setTimeout(() => {
+    toast.hidden = true;
+  }, 2500);
+}
+
+async function saveCurrentMatch(redirectTarget = 'reports') {
+  const res = await fetch('/api/match/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const result = await res.json();
+
+  if (!result.ok) {
+    alert(result.message || 'Failed to save match.');
+    return;
+  }
+
+  matchSaved = true;
+  showToast(result.message || 'Match saved successfully.');
+
+  const gameId = result.game_id;
+
+  if (redirectTarget === 'reports') {
+    setTimeout(() => {
+      window.location.href = gameId
+        ? `/player-dashboard?match_id=${gameId}&tab=reports`
+        : '/player-dashboard?tab=reports';
+    }, 900);
+  }
+
+  if (redirectTarget === 'setup') {
+    setTimeout(() => {
+      window.location.href = '/setup';
+    }, 900);
+  }
+}
 
 function renderScore(score) {
   if (!score) return;
@@ -87,11 +134,34 @@ function renderScore(score) {
     receivingBtn.textContent = isSingles ? 'Receiver Won Rally' : 'Receiving Team Won Rally';
     receivingBtn.disabled = Boolean(score.game_over);
   }
+  const saveMatchBtn = document.getElementById('saveMatch');
+
+if (saveMatchBtn) {
+  if (matchSaved) {
+    saveMatchBtn.textContent = 'Match Saved';
+    saveMatchBtn.disabled = true;
+  } else {
+    saveMatchBtn.textContent = 'Save & End Game';
+    saveMatchBtn.disabled = false;
+  }
 }
 
-/* =========================
-   API CALLS
-========================= */
+const autoSaveBox = document.getElementById('autoSaveSession');
+
+if (
+  autoSaveBox &&
+  autoSaveBox.checked &&
+  score.game_over &&
+  !matchSaved &&
+  !autoSaveTriggered
+) {
+  autoSaveTriggered = true;
+  saveCurrentMatch('none');
+}
+}
+
+
+
 
 async function fetchLiveData() {
   const res = await fetch('/api/live-data');
@@ -118,58 +188,54 @@ async function submitRally(winner) {
   await loadDashboard();
 }
 
-/* =========================
-   MAIN DASHBOARD LOADER
-========================= */
-
 async function loadDashboard() {
-  const data = await fetchLiveData();
+  try {
+    const data = await fetchLiveData();
 
-  const latest = data.latest || {};
-  const m = data.metrics || {};
+    const latest = data.latest || {};
+    const m = data.metrics || {};
 
-  const callCard = document.querySelector('.call-card');
+    const callCard = document.querySelector('.call-card');
 
-  if (callCard) {
-    callCard.classList.toggle('call-in', latest.system_call === 'IN');
-    callCard.classList.toggle('call-out', latest.system_call === 'OUT');
+    if (callCard) {
+      callCard.classList.toggle('call-in', latest.system_call === 'IN');
+      callCard.classList.toggle('call-out', latest.system_call === 'OUT');
+    }
+
+    setText('lastCall', latest.system_call || '--');
+    setText('callConfidence', latest.confidence ? fmtPct(latest.confidence) : '');
+
+    setText('bounceX', fmtNum(latest.bounce_x, 2));
+    setText('bounceY', fmtNum(latest.bounce_y, 2));
+    setText('latency', fmtNum(latest.latency_ms, 1));
+    setText('fps', fmtNum(latest.fps, 1));
+    setText('totalShots', m.total_shots ?? '--');
+    setText('courtZone', latest.court_zone || 'Zone --');
+
+    setText('avgConfidence', fmtPct(m.avg_confidence));
+    setText('avgLatency', `${fmtNum(m.avg_latency_ms)} ms`);
+    setText('maxLatency', `${fmtNum(m.max_latency_ms)} ms`);
+    setText('cpuUsage', `${fmtNum(m.cpu_usage)}%`);
+    setText('ramUsage', `${fmtNum(m.ram_usage)}%`);
+    setText('accuracy', fmtPct(m.accuracy));
+
+    setText('toggleSimulation', data.simulation ? 'Pause Simulation' : 'Resume Simulation');
+
+    renderScore(data.score);
+
+    drawCourt(
+      data.rally_trajectory || latest.trajectory || [],
+      latest.bounce_x,
+      latest.bounce_y,
+      latest.system_call,
+      data.score
+    );
+
+    renderEventTable(data.events || []);
+  } catch (error) {
+    console.error('Dashboard load error:', error);
   }
-
-  setText('lastCall', latest.system_call || '--');
-  setText('callConfidence', latest.confidence ? fmtPct(latest.confidence) : '');
-
-  setText('bounceX', fmtNum(latest.bounce_x, 2));
-  setText('bounceY', fmtNum(latest.bounce_y, 2));
-  setText('latency', fmtNum(latest.latency_ms, 1));
-  setText('fps', fmtNum(latest.fps, 1));
-  setText('totalShots', m.total_shots ?? '--');
-  setText('courtZone', latest.court_zone || 'Zone --');
-
-  setText('avgConfidence', fmtPct(m.avg_confidence));
-  setText('avgLatency', `${fmtNum(m.avg_latency_ms)} ms`);
-  setText('maxLatency', `${fmtNum(m.max_latency_ms)} ms`);
-  setText('cpuUsage', `${fmtNum(m.cpu_usage)}%`);
-  setText('ramUsage', `${fmtNum(m.ram_usage)}%`);
-  setText('accuracy', fmtPct(m.accuracy));
-
-  setText('toggleSimulation', data.simulation ? 'Pause Simulation' : 'Resume Simulation');
-
-  renderScore(data.score);
-
-  drawCourt(
-    data.rally_trajectory || latest.trajectory || [],
-    latest.bounce_x,
-    latest.bounce_y,
-    latest.system_call,
-    data.score
-  );
-
-  renderEventTable(data.events || []);
 }
-
-/* =========================
-   EVENT TABLE
-========================= */
 
 function renderEventTable(events) {
   const tbody = document.getElementById('eventTable');
@@ -187,10 +253,6 @@ function renderEventTable(events) {
     </tr>
   `).join('');
 }
-
-/* =========================
-   COURT MAP
-========================= */
 
 function courtMapper(canvas) {
   const ctx = canvas.getContext('2d');
@@ -301,7 +363,6 @@ function drawCourtLines(m) {
   ctx.fillStyle = '#3559a8';
   ctx.fillRect(m.cx, m.cy, m.cw, m.ch);
 
-  // Non-volley zone / kitchen
   ctx.fillStyle = '#4b74d9';
   ctx.fillRect(m.x(15), m.cy, m.x(22) - m.x(15), m.ch);
   ctx.fillRect(m.x(22), m.cy, m.x(29) - m.x(22), m.ch);
@@ -310,7 +371,6 @@ function drawCourtLines(m) {
   ctx.lineWidth = 4;
   ctx.strokeRect(m.cx, m.cy, m.cw, m.ch);
 
-  // Kitchen lines
   [15, 29].forEach(x => {
     ctx.beginPath();
     ctx.moveTo(m.x(x), m.cy);
@@ -318,7 +378,6 @@ function drawCourtLines(m) {
     ctx.stroke();
   });
 
-  // Net
   ctx.beginPath();
   ctx.moveTo(m.x(22), m.cy);
   ctx.lineTo(m.x(22), m.cy + m.ch);
@@ -326,7 +385,6 @@ function drawCourtLines(m) {
   ctx.lineWidth = 3;
   ctx.stroke();
 
-  // Center service lines
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 3;
 
@@ -357,7 +415,6 @@ function drawServiceOverlay(m, score) {
 
   const ctx = m.ctx;
 
-  // Diagonal service guide line
   ctx.setLineDash([10, 8]);
 
   ctx.beginPath();
@@ -387,7 +444,6 @@ function drawCourt(trajectory, bounceX, bounceY, call, score) {
 
   const cleanTrajectory = simplifyTrajectory(trajectory, 55);
 
-  // Draw readable current-rally trail
   if (cleanTrajectory.length) {
     for (let i = 1; i < cleanTrajectory.length; i++) {
       const prev = cleanTrajectory[i - 1];
@@ -405,7 +461,6 @@ function drawCourt(trajectory, bounceX, bounceY, call, score) {
       ctx.stroke();
     }
 
-    // Only a few dots so the rally does not overlap too much
     const dotStep = Math.max(1, Math.ceil(cleanTrajectory.length / 12));
 
     cleanTrajectory.forEach((p, i) => {
@@ -445,57 +500,201 @@ function drawCourt(trajectory, bounceX, bounceY, call, score) {
   }
 }
 
-/* =========================
-   BUTTON EVENTS
-========================= */
+function setupButtonEvents() {
+  const startScoreBtn = document.getElementById('startScore');
+  if (startScoreBtn) {
+    startScoreBtn.addEventListener('click', startScore);
+  }
 
-const startScoreBtn = document.getElementById('startScore');
-if (startScoreBtn) {
-  startScoreBtn.addEventListener('click', startScore);
+  const resetScoreBtn = document.getElementById('resetScore');
+  if (resetScoreBtn) {
+    resetScoreBtn.addEventListener('click', async () => {
+      const scoreCall = document.getElementById('scoreCall')?.textContent || '0-0-0';
+
+      if (!confirm(`Reset the pickleball score from ${scoreCall}?`)) return;
+
+      await resetScore();
+    });
+  }
+
+  const servingWonBtn = document.getElementById('servingWon');
+  if (servingWonBtn) {
+    servingWonBtn.addEventListener('click', () => submitRally('serving'));
+  }
+
+  const receivingWonBtn = document.getElementById('receivingWon');
+  if (receivingWonBtn) {
+    receivingWonBtn.addEventListener('click', () => submitRally('receiving'));
+  }
+
+  const toggleSimulationBtn = document.getElementById('toggleSimulation');
+  if (toggleSimulationBtn) {
+    toggleSimulationBtn.addEventListener('click', async () => {
+      await fetch('/api/toggle-simulation', { method: 'POST' });
+      loadDashboard();
+    });
+  }
+
+  const resetSessionBtn = document.getElementById('resetSession');
+  if (resetSessionBtn) {
+    resetSessionBtn.addEventListener('click', async () => {
+      if (!confirm('Start a new empty session?')) return;
+
+      await fetch('/api/reset-session', { method: 'POST' });
+      loadDashboard();
+    });
+  }
+
+  /* =========================
+     SAVE MATCH BUTTON EVENTS
+  ========================= */
+
+  const saveMatchBtn = document.getElementById('saveMatch');
+  const saveMatchModal = document.getElementById('saveMatchModal');
+  const cancelSaveMatchBtn = document.getElementById('cancelSaveMatch');
+  const saveMatchReportsBtn = document.getElementById('saveMatchReports');
+  const saveMatchSetupBtn = document.getElementById('saveMatchSetup');
+  const autoSaveSessionBox = document.getElementById('autoSaveSession');
+
+  if (autoSaveSessionBox) {
+    autoSaveSessionBox.checked = localStorage.getItem('picklevisionAutoSave') === 'true';
+
+    autoSaveSessionBox.addEventListener('change', () => {
+      localStorage.setItem(
+        'picklevisionAutoSave',
+        autoSaveSessionBox.checked ? 'true' : 'false'
+      );
+    });
+  }
+
+  if (saveMatchBtn && saveMatchModal) {
+    saveMatchBtn.addEventListener('click', () => {
+      saveMatchModal.hidden = false;
+    });
+  }
+
+  if (cancelSaveMatchBtn && saveMatchModal) {
+    cancelSaveMatchBtn.addEventListener('click', () => {
+      saveMatchModal.hidden = true;
+    });
+  }
+
+  if (saveMatchReportsBtn && saveMatchModal) {
+    saveMatchReportsBtn.addEventListener('click', async () => {
+      saveMatchReportsBtn.disabled = true;
+      saveMatchReportsBtn.textContent = 'Saving...';
+
+      await saveCurrentMatch('reports');
+
+      saveMatchModal.hidden = true;
+    });
+  }
+
+  if (saveMatchSetupBtn && saveMatchModal) {
+    saveMatchSetupBtn.addEventListener('click', async () => {
+      saveMatchSetupBtn.disabled = true;
+      saveMatchSetupBtn.textContent = 'Saving...';
+
+      await saveCurrentMatch('setup');
+
+      saveMatchModal.hidden = true;
+    });
+  }
+
+  if (saveMatchModal) {
+    saveMatchModal.addEventListener('click', (event) => {
+      if (event.target === saveMatchModal) {
+        saveMatchModal.hidden = true;
+      }
+    });
+  }
+
+  /* =========================
+     CONVERT SINGLES TO DOUBLES
+  ========================= */
+
+  const openConvertDoublesBtn = document.getElementById('openConvertDoubles');
+  const convertDoublesPanel = document.getElementById('convertDoublesPanel');
+  const cancelConvertDoublesBtn = document.getElementById('cancelConvertDoubles');
+  const confirmConvertDoublesBtn = document.getElementById('confirmConvertDoubles');
+
+  if (openConvertDoublesBtn) {
+    openConvertDoublesBtn.addEventListener('click', () => {
+      if (!convertDoublesPanel) {
+        alert('Convert panel is missing in dashboard.html');
+        return;
+      }
+
+      convertDoublesPanel.style.display = 'block';
+      openConvertDoublesBtn.style.display = 'none';
+    });
+  }
+
+  if (cancelConvertDoublesBtn) {
+    cancelConvertDoublesBtn.addEventListener('click', () => {
+      if (convertDoublesPanel) {
+        convertDoublesPanel.style.display = 'none';
+      }
+
+      if (openConvertDoublesBtn) {
+        openConvertDoublesBtn.style.display = 'inline-flex';
+      }
+    });
+  }
+
+  if (confirmConvertDoublesBtn) {
+    confirmConvertDoublesBtn.addEventListener('click', async () => {
+      const teammateName = document.getElementById('convertTeammateName')?.value.trim();
+      const opponent2 = document.getElementById('convertOpponent2')?.value.trim();
+
+      if (!teammateName || !opponent2) {
+        alert('Please enter both teammate name and opponent 2.');
+        return;
+      }
+
+      const confirmChange = confirm(
+        'Convert this 1v1 match into 2v2? The score will reset because the match format will change.'
+      );
+
+      if (!confirmChange) return;
+
+      try {
+        const res = await fetch('/api/match/convert-to-doubles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            teammate_name: teammateName,
+            opponent_2: opponent2,
+          }),
+        });
+
+        const result = await res.json();
+
+        if (!result.ok) {
+          alert(result.message || 'Failed to convert match.');
+          return;
+        }
+
+        window.location.href = '/live-dashboard';
+      } catch (error) {
+        console.error('Convert to doubles error:', error);
+        alert('Failed to convert match. Check the browser console.');
+      }
+    });
+  }
 }
 
-const resetScoreBtn = document.getElementById('resetScore');
-if (resetScoreBtn) {
-  resetScoreBtn.addEventListener('click', async () => {
-    const scoreCall = document.getElementById('scoreCall')?.textContent || '0-0-0';
+function initDashboard() {
+  console.log('PickleVision dashboard.js loaded');
 
-    if (!confirm(`Reset the pickleball score from ${scoreCall}?`)) return;
-
-    await resetScore();
-  });
+  setupButtonEvents();
+  loadDashboard();
+  setInterval(loadDashboard, 2000);
 }
 
-const servingWonBtn = document.getElementById('servingWon');
-if (servingWonBtn) {
-  servingWonBtn.addEventListener('click', () => submitRally('serving'));
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initDashboard);
+} else {
+  initDashboard();
 }
 
-const receivingWonBtn = document.getElementById('receivingWon');
-if (receivingWonBtn) {
-  receivingWonBtn.addEventListener('click', () => submitRally('receiving'));
-}
-
-const toggleSimulationBtn = document.getElementById('toggleSimulation');
-if (toggleSimulationBtn) {
-  toggleSimulationBtn.addEventListener('click', async () => {
-    await fetch('/api/toggle-simulation', { method: 'POST' });
-    loadDashboard();
-  });
-}
-
-const resetSessionBtn = document.getElementById('resetSession');
-if (resetSessionBtn) {
-  resetSessionBtn.addEventListener('click', async () => {
-    if (!confirm('Start a new empty session?')) return;
-
-    await fetch('/api/reset-session', { method: 'POST' });
-    loadDashboard();
-  });
-}
-
-/* =========================
-   START DASHBOARD
-========================= */
-
-loadDashboard();
-setInterval(loadDashboard, 2000);
