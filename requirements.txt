@@ -1,6 +1,27 @@
-Flask>=3.0.0
-psutil>=5.9.0
-ultralytics>=8.0.0
-opencv-python>=4.8.0
-numpy>=1.24.0
-firebase-admin
+# Project PickleVision: unified dependencies (dashboard + tracking engine)
+# Python 3.11 or 3.12 recommended. One command installs everything:
+#   pip install -r requirements.txt
+# The extra index supplies the CUDA 12.4 build of PyTorch. Without it, pip pulls
+# the CPU-only wheel from PyPI (ultralytics depends on torch) and inference
+# silently runs on CPU.
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+# ---- GPU inference (from picklevision_Draft) ----
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+
+# ---- Tracking engine (from picklevision_Draft) ----
+ultralytics==8.4.146      # YOLO26 support; do not loosen to >=8.0
+opencv-python==4.12.0.88  # do not also install opencv-python-headless
+numpy==2.2.6
+lap==0.5.13               # ByteTrack dependency; pinned so it isn't auto-installed at runtime (offline)
+
+# ---- Dashboard ----
+Flask>=3.0,<4
+psutil>=5.9
+firebase-admin>=6.0       # still imported unconditionally by app.py
+
+# ---- Removed on purpose (Roboflow server path, not needed offline) ----
+# supervision==0.29.1
+# inference==1.5.2
+# inference-sdk==1.5.2    # re-add only if you still need --use-roboflow

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import csv
 import io
 import json
@@ -18,9 +19,7 @@ from flask import Flask, Response, flash, jsonify, redirect, render_template, re
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from ai.mock_ai import generate_mock_event
-
-
-from ai.mock_ai import generate_mock_event
+from ai.tracker_service import tracker_service
 
 # Add Firebase imports here:
 import firebase_admin
@@ -1755,20 +1754,33 @@ def api_update_live_data():
 
 @app.route("/api/ai-status")
 def api_ai_status():
-    """Show model and simulation status for quick debugging."""
-    try:
-        from ai.detector import get_model_status
-        model_status = get_model_status()
-    except Exception as exc:  # pragma: no cover
-        model_status = {"available": False, "loaded": False, "error": str(exc)}
+    """Show live tracker status for quick debugging."""
+    return jsonify(tracker_service.status())
 
-    return jsonify({
-        "session_id": SESSION_ID,
-        "simulation_enabled": SIMULATION_ENABLED,
-        "database": str(DB_PATH),
-        "model": model_status,
-        "ingest_key_required": bool(API_INGEST_KEY),
-    })
+
+@app.route("/video_feed")
+def video_feed():
+    return Response(tracker_service.mjpeg_stream(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.route("/api/camera/status")
+def api_camera_status():
+    return jsonify(tracker_service.status())
+
+
+@app.route("/api/camera/start", methods=["POST"])
+def api_camera_start():
+    tracker_service.start()
+    return jsonify(tracker_service.status())
+
+
+@app.route("/api/camera/stop", methods=["POST"])
+def api_camera_stop():
+    tracker_service.stop()
+    return jsonify(tracker_service.status())
+
+
+atexit.register(tracker_service.stop)
 
 
 @app.route("/api/live-data")
@@ -1906,4 +1918,4 @@ def export_games_csv():
 
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="127.0.0.1", port=5000, debug=True, use_reloader=False, threaded=True)

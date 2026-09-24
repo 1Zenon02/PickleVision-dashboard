@@ -7,3 +7,6 @@ __pycache__/
 *.pyc
 venv/
 .env
+
+# Model weights (large binaries; drop best.pt in models/ locally, don't commit it)
+*.pt
