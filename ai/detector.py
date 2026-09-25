@@ -1,3 +1,8 @@
+"""DEPRECATED: part of the early ai/pipeline.py scaffold, never wired into app.py.
+
+Real detection now happens inside ai/engine/pickle_tracker.py's
+PickleVisionTracker, run by ai/tracker_service.py. Kept only for reference.
+"""
 from __future__ import annotations
 
 from pathlib import Path

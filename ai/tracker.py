@@ -1,3 +1,8 @@
+"""DEPRECATED: part of the early ai/pipeline.py scaffold, never wired into app.py.
+
+Do not confuse with ai/engine/pickle_tracker.py (PickleVisionTracker), the
+real, active tracker run by ai/tracker_service.py. Kept only for reference.
+"""
 from __future__ import annotations
 
 from typing import Dict, List

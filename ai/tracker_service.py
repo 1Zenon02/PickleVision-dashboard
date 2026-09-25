@@ -5,8 +5,11 @@ picklevision_Draft PickleVisionTracker on every frame, JPEG-encodes the
 annotated result once, and publishes it. Flask request threads only read the
 latest JPEG, so a slow frame never blocks page loads or API calls.
 
-Milestone 1 scope: live annotated video only. Ball events are produced by the
-tracker (tracker.events) but are NOT sent to the database yet.
+Ball events (bounces + line calls) are produced by the tracker (tracker.events)
+and drained by Flask request threads via pop_new_ball_events() -- see
+app.py's ingest_live_tracker_events(), called from before_request. Draining
+happens on the request thread, not here, so this module never touches Flask's
+session/request context.
 """
 from __future__ import annotations
 
@@ -56,6 +59,7 @@ class TrackerService:
         self._tracker = None  # PickleVisionTracker; built once, model load is slow
         self._jpeg: Optional[bytes] = None
         self._frame_id = 0
+        self._events_cursor = 0  # index into tracker.events already drained by pop_new_ball_events()
         self._status: Dict[str, Any] = {
             "state": "idle",
             "error": None,
@@ -67,6 +71,7 @@ class TrackerService:
             "inference_ms": 0.0,
             "frames": 0,
             "calibrated": False,
+            "tracking": False,
             "debug": None,
         }
 
@@ -77,6 +82,7 @@ class TrackerService:
                 return
             self._stop_event.clear()
             self._jpeg = None
+            self._events_cursor = 0
             self._status.update(state="starting", error=None, fps=0.0, inference_ms=0.0, frames=0)
             self._thread = threading.Thread(target=self._run, name="picklevision-tracker", daemon=True)
             self._thread.start()
@@ -90,6 +96,49 @@ class TrackerService:
     def status(self) -> Dict[str, Any]:
         with self._lock:
             return dict(self._status)
+
+    def live_trajectory(self) -> list[Dict[str, Any]]:
+        """The ball's current in-progress path (court feet), for a fast-polled
+        live court-map trail -- distinct from pop_new_ball_events(), which only
+        returns committed bounce events. Empty when idle or no active lock."""
+        with self._lock:
+            if self._tracker is None:
+                return []
+            points = [self._tracker.pixel_to_court_ft(p) for p in self._tracker.primary_trajectory]
+        return [{"x": round(x, 3), "y": round(y, 3)} for x, y in points]
+
+    def pop_new_ball_events(self) -> list[Dict[str, Any]]:
+        """Drain BallEvents appended since the last call, as plain dicts.
+
+        Called from Flask request threads (see app.py's
+        ingest_live_tracker_events()), never from the tracker thread itself --
+        keeps DB/session code entirely off the background thread. Locked
+        together with the run loop's own trim of tracker.events so the cursor
+        stays valid across a trim (see _run).
+        """
+        with self._lock:
+            if self._tracker is None:
+                return []
+            events = self._tracker.events
+            new_events = events[self._events_cursor:]
+            self._events_cursor = len(events)
+            return [self._event_to_dict(e) for e in new_events]
+
+    def _event_to_dict(self, e: Any) -> Dict[str, Any]:
+        return {
+            "frame_index": e.frame_index,
+            "track_id": e.track_id,
+            "centroid": e.centroid,
+            "velocity": e.velocity,
+            # (x_ft, y_ft) in CourtMapper's convention (x=width, y=length) --
+            # BallEvent.landing_point itself is detection-frame pixels, not
+            # court feet, so this maps it through the calibrated homography.
+            "landing_point_ft": self._tracker.pixel_to_court_ft(e.landing_point),
+            "line_call": e.line_call,
+            "confidence": e.confidence,
+            "timestamp": e.timestamp,
+            "camera_id": e.camera_id,
+        }
 
     def mjpeg_stream(self) -> Iterator[bytes]:
         """multipart/x-mixed-replace generator. Each client gets the newest frame;
@@ -123,15 +172,17 @@ class TrackerService:
     def _build_tracker(self):
         from .engine.pickle_tracker import CourtMapper, PickleVisionTracker
 
-        model_path = Path(config.MODEL_PATH)
-        # A bare filename with no directory (e.g. "yolov8n.pt") names a stock
-        # Ultralytics model that YOLO() auto-downloads on first use; only a
-        # path we manage ourselves (models/best.pt) needs to already exist.
-        if len(model_path.parts) > 1 and not model_path.exists():
-            raise FileNotFoundError(
-                f"Model weights not found at {config.MODEL_PATH}. Copy the v2 best.pt there "
-                "or set PICKLEVISION_MODEL_PATH."
-            )
+        use_roboflow = config.TRACKER_ROBOFLOW_LOCAL or config.TRACKER_USE_ROBOFLOW
+        if not use_roboflow:
+            model_path = Path(config.MODEL_PATH)
+            # A bare filename with no directory (e.g. "yolov8n.pt") names a stock
+            # Ultralytics model that YOLO() auto-downloads on first use; only a
+            # path we manage ourselves (models/best.pt) needs to already exist.
+            if len(model_path.parts) > 1 and not model_path.exists():
+                raise FileNotFoundError(
+                    f"Model weights not found at {config.MODEL_PATH}. Copy the v2 best.pt there "
+                    "or set PICKLEVISION_MODEL_PATH."
+                )
 
         court_mapper = None
         corners = _load_court_corners()
@@ -154,6 +205,15 @@ class TrackerService:
             target_width=config.TRACKER_WIDTH,
             target_height=config.TRACKER_HEIGHT,
             zoom_to_court=config.TRACKER_ZOOM,
+            exclude_people=config.TRACKER_EXCLUDE_PEOPLE,
+            use_roboflow=config.TRACKER_USE_ROBOFLOW,
+            roboflow_local=config.TRACKER_ROBOFLOW_LOCAL,
+            roboflow_api_url=config.TRACKER_ROBOFLOW_API_URL,
+            roboflow_api_key=config.TRACKER_ROBOFLOW_API_KEY,
+            roboflow_workspace_name=config.TRACKER_ROBOFLOW_WORKSPACE_NAME,
+            roboflow_model_id=config.TRACKER_ROBOFLOW_MODEL_ID,
+            roboflow_workflow_id=config.TRACKER_ROBOFLOW_WORKFLOW_ID,
+            roboflow_infer_size=config.TRACKER_ROBOFLOW_INFER_SIZE,
         )
         return tracker, court_mapper is not None
 
@@ -176,7 +236,9 @@ class TrackerService:
         t.primary_trajectory = []
         t.missed_frames = 0
         t.track_history.clear()
-        t.events.clear()
+        with self._lock:
+            t.events.clear()
+            self._events_cursor = 0
 
     @staticmethod
     def _open_capture(source: int | str):
@@ -259,9 +321,6 @@ class TrackerService:
                 annotated = self._tracker.process_frame(frame)
                 infer_ms = (time.perf_counter() - t0) * 1000.0
 
-                if len(self._tracker.events) > _MAX_BUFFERED_EVENTS:
-                    del self._tracker.events[: -(_MAX_BUFFERED_EVENTS // 4)]
-
                 now = time.perf_counter()
                 inst_fps = 1.0 / max(now - last_tick, 1e-6)
                 last_tick = now
@@ -271,12 +330,19 @@ class TrackerService:
                 jpeg = self._encode(annotated, fps_ema, infer_ms)
                 if jpeg is not None:
                     with self._lock:
+                        # Trim under the same lock pop_new_ball_events() reads under,
+                        # so shrinking the list can't invalidate its cursor mid-read.
+                        if len(self._tracker.events) > _MAX_BUFFERED_EVENTS:
+                            cut = len(self._tracker.events) - (_MAX_BUFFERED_EVENTS // 4)
+                            del self._tracker.events[:cut]
+                            self._events_cursor = max(0, self._events_cursor - cut)
                         self._jpeg = jpeg
                         self._frame_id += 1
                         self._status.update(
                             fps=round(fps_ema, 1),
                             inference_ms=round(infer_ms, 1),
                             frames=frames,
+                            tracking=self._tracker.primary_track_id is not None,
                             debug=self._debug_snapshot(),
                         )
                         self._new_frame.notify_all()

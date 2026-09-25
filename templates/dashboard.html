@@ -30,7 +30,6 @@
       Auto-Save Session
     </label>
 
-    <button class="btn" id="toggleSimulation" type="button">Pause Simulation</button>
     <button class="btn danger" id="resetSession" type="button">New Session</button>
     <a class="btn" href="/api/export/events.csv">Export CSV</a>
   </div>
@@ -262,6 +261,10 @@
     <h3>Performance indicators</h3>
 
     <div class="status-list">
+      <div><span>Camera Status</span><strong id="cameraStatusCard">--</strong></div>
+      <div><span>Model Engine</span><strong id="modelEngineCard">--</strong></div>
+      <div><span>Live Inference Latency</span><strong id="liveLatencyCard">--</strong></div>
+      <div><span>Tracking State</span><strong id="trackingStateCard">--</strong></div>
       <div><span>Average Confidence</span><strong id="avgConfidence">--</strong></div>
       <div><span>Average Latency</span><strong id="avgLatency">--</strong></div>
       <div><span>Maximum Latency</span><strong id="maxLatency">--</strong></div>

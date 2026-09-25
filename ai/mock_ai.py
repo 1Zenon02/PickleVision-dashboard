@@ -1,3 +1,10 @@
+"""DEPRECATED: superseded by the live tracker pipeline.
+
+Real bounce detection and line-calling now come from ai/engine/pickle_tracker.py
+(vendored PickleVisionTracker) via ai/tracker_service.py, bridged into the
+dashboard by app.py's ingest_live_tracker_events(). Nothing in app.py imports
+this module anymore -- kept only for reference.
+"""
 from __future__ import annotations
 
 import math

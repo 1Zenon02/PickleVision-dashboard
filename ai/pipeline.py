@@ -1,3 +1,10 @@
+"""DEPRECATED: early scaffold, never wired into app.py.
+
+The active implementation is ai/engine/pickle_tracker.py (PickleVisionTracker)
+run by ai/tracker_service.py -- it already does real detection, physics-based
+bounce detection, and homography-based line calling, more capably than the
+placeholders this module chains together. Kept only for reference.
+"""
 from __future__ import annotations
 
 import time

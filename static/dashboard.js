@@ -2,7 +2,7 @@ const courtLength = 44;
 const courtWidth = 20;
 
 function fmtPct(v) {
-  return `${Math.round((v || 0) * 100)}%`;
+  return `${((v || 0) * 100).toFixed(1)}%`;
 }
 
 function fmtNum(v, digits = 1) {
@@ -168,6 +168,24 @@ async function fetchLiveData() {
   return await res.json();
 }
 
+async function fetchCameraStatus() {
+  const res = await fetch('/api/camera/status', { cache: 'no-store' });
+  return await res.json();
+}
+
+function renderSystemStatus(status) {
+  if (!status) return;
+  const live = status.state === 'running';
+
+  setText('cameraStatusCard', live ? `Active | ${fmtNum(status.fps, 1)} fps` : (status.state || 'Off'));
+
+  const modelName = (status.model || '').split(/[\\/]/).pop() || '--';
+  setText('modelEngineCard', status.device ? `${status.device} | ${modelName}` : modelName);
+
+  setText('liveLatencyCard', live ? `${fmtNum(status.inference_ms, 1)} ms` : '--');
+  setText('trackingStateCard', live ? (status.tracking ? 'Tracking' : 'Lost') : '--');
+}
+
 async function startScore() {
   await fetch('/api/score/start', { method: 'POST' });
   await loadDashboard();
@@ -188,12 +206,40 @@ async function submitRally(winner) {
   await loadDashboard();
 }
 
+// Court map has two update cadences sharing one render: loadDashboard() (1s)
+// owns the committed bounce marker/score/fallback trail, syncLiveTrajectory()
+// (150ms) owns the ball's live in-progress path. Each loop only writes its
+// own half of the state below, then calls the shared renderCourtMap() --
+// keeps them from fighting over the canvas redraw.
+let courtState = { rallyTrajectory: [], bounceX: 0, bounceY: 0, call: null, score: null };
+let lastLiveTrajectory = [];
+
+function renderCourtMap() {
+  const trajectory = lastLiveTrajectory.length ? lastLiveTrajectory : courtState.rallyTrajectory;
+  drawCourt(trajectory, courtState.bounceX, courtState.bounceY, courtState.call, courtState.score);
+}
+
+async function syncLiveTrajectory() {
+  try {
+    const res = await fetch('/api/camera/trajectory', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    lastLiveTrajectory = data.trajectory || [];
+    renderCourtMap();
+  } catch (error) {
+    // Skip this tick silently -- loadDashboard's own polling/error handling
+    // covers real connectivity problems; a missed 150ms frame isn't worth logging.
+  }
+}
+
 async function loadDashboard() {
   try {
-    const data = await fetchLiveData();
+    const [data, cameraStatus] = await Promise.all([fetchLiveData(), fetchCameraStatus()]);
 
     const latest = data.latest || {};
     const m = data.metrics || {};
+
+    renderSystemStatus(cameraStatus);
 
     const callCard = document.querySelector('.call-card');
 
@@ -215,26 +261,44 @@ async function loadDashboard() {
     setText('avgConfidence', fmtPct(m.avg_confidence));
     setText('avgLatency', `${fmtNum(m.avg_latency_ms)} ms`);
     setText('maxLatency', `${fmtNum(m.max_latency_ms)} ms`);
-    setText('cpuUsage', `${fmtNum(m.cpu_usage)}%`);
-    setText('ramUsage', `${fmtNum(m.ram_usage)}%`);
+    setText('cpuUsage', m.cpu_usage == null ? '--' : `${fmtNum(m.cpu_usage)}%`);
+    setText('ramUsage', m.ram_usage == null ? '--' : `${fmtNum(m.ram_usage)}%`);
     setText('accuracy', fmtPct(m.accuracy));
-
-    setText('toggleSimulation', data.simulation ? 'Pause Simulation' : 'Resume Simulation');
 
     renderScore(data.score);
 
-    drawCourt(
-      data.rally_trajectory || latest.trajectory || [],
-      latest.bounce_x,
-      latest.bounce_y,
-      latest.system_call,
-      data.score
-    );
+    courtState = {
+      rallyTrajectory: data.rally_trajectory || latest.trajectory || [],
+      bounceX: latest.bounce_x,
+      bounceY: latest.bounce_y,
+      call: latest.system_call,
+      score: data.score,
+    };
+    renderCourtMap();
 
     renderEventTable(data.events || []);
   } catch (error) {
     console.error('Dashboard load error:', error);
   }
+}
+
+function formatEventTime(iso) {
+  const timePart = String(iso).split('T')[1] || String(iso);
+  return timePart.split(/[+Z]/)[0];
+}
+
+function correctLabel(correct) {
+  if (correct === null || correct === undefined) return 'Pending';
+  return correct ? 'Match' : 'Discrepancy';
+}
+
+function humanCell(e) {
+  if (e.human_call) return badge(e.human_call);
+  if (!e.id) return '--';
+  return `
+    <button class="btn small ref-call" data-event-id="${e.id}" data-call="IN">IN</button>
+    <button class="btn small ref-call" data-event-id="${e.id}" data-call="OUT">OUT</button>
+  `;
 }
 
 function renderEventTable(events) {
@@ -243,16 +307,31 @@ function renderEventTable(events) {
 
   tbody.innerHTML = events.slice().reverse().map(e => `
     <tr>
-      <td>${String(e.timestamp).replace('T', ' ')}</td>
+      <td>${formatEventTime(e.timestamp)}</td>
       <td>${badge(e.system_call)}</td>
-      <td>${badge(e.human_call)}</td>
-      <td>${e.correct === null || e.correct === undefined ? '--' : (e.correct ? 'Yes' : 'No')}</td>
+      <td>${humanCell(e)}</td>
+      <td>${correctLabel(e.correct)}</td>
       <td>${fmtPct(e.confidence)}</td>
-      <td>${fmtNum(e.bounce_x, 2)}, ${fmtNum(e.bounce_y, 2)}</td>
-      <td>${fmtNum(e.latency_ms, 1)} ms</td>
+      <td>${e.court_zone || '--'}</td>
+      <td>${fmtNum(e.latency_ms, 1)}ms</td>
     </tr>
   `).join('');
 }
+
+async function submitRefereeCall(eventId, humanCall) {
+  await fetch(`/api/events/${eventId}/validate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ human_call: humanCall }),
+  });
+  await loadDashboard();
+}
+
+document.addEventListener('click', (event) => {
+  const btn = event.target.closest('.ref-call');
+  if (!btn) return;
+  submitRefereeCall(btn.dataset.eventId, btn.dataset.call);
+});
 
 function courtMapper(canvas) {
   const ctx = canvas.getContext('2d');
@@ -527,14 +606,6 @@ function setupButtonEvents() {
     receivingWonBtn.addEventListener('click', () => submitRally('receiving'));
   }
 
-  const toggleSimulationBtn = document.getElementById('toggleSimulation');
-  if (toggleSimulationBtn) {
-    toggleSimulationBtn.addEventListener('click', async () => {
-      await fetch('/api/toggle-simulation', { method: 'POST' });
-      loadDashboard();
-    });
-  }
-
   const resetSessionBtn = document.getElementById('resetSession');
   if (resetSessionBtn) {
     resetSessionBtn.addEventListener('click', async () => {
@@ -689,7 +760,8 @@ function initDashboard() {
 
   setupButtonEvents();
   loadDashboard();
-  setInterval(loadDashboard, 2000);
+  setInterval(loadDashboard, 1000);
+  setInterval(syncLiveTrajectory, 150);
 }
 
 if (document.readyState === 'loading') {

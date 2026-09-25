@@ -356,6 +356,7 @@ class BallEvent:
     velocity: float = 0.0
     landing_point: tuple[float, float] | None = None
     line_call: str = "UNKNOWN"
+    confidence: float = 0.0
     timestamp: float = field(default_factory=time.time)
     # Tags which camera produced this event. A future 2nd-camera setup runs one
     # PickleVisionTracker per camera (each with its own CourtMapper.src_points
@@ -730,6 +731,28 @@ class PickleVisionTracker:
 
         return None
 
+    def _to_original_frame_point(self, point):
+        """Offset a point back from the (possibly zoomed/cropped) detection
+        frame to original-frame pixel coordinates, matching what the
+        calibrated homography (CourtMapper.src_points) was measured against.
+        """
+        if point is None or self.zoom_roi is None:
+            return point
+        offset_x, offset_y, _, _ = self.zoom_roi
+        return (point[0] + offset_x, point[1] + offset_y)
+
+    def pixel_to_court_ft(self, point):
+        """Map a detection-frame pixel point to real court feet.
+
+        Used by tracker_service to hand the dashboard actual court
+        coordinates instead of raw pixels -- BallEvent.landing_point is
+        stored in detection-frame pixel space, not court feet.
+        """
+        point = self._to_original_frame_point(point)
+        if point is None:
+            return None
+        return self.court_mapper.map_point(point)
+
     def _classify_in_out(self, court_point):
         """Use homography-based court mapping to assign a line-call result.
 
@@ -740,10 +763,7 @@ class PickleVisionTracker:
         if court_point is None:
             return "UNKNOWN"
 
-        if self.zoom_roi is not None:
-            offset_x, offset_y, _, _ = self.zoom_roi
-            court_point = (court_point[0] + offset_x, court_point[1] + offset_y)
-
+        court_point = self._to_original_frame_point(court_point)
         return self.court_mapper.classify(court_point)
 
     def _compute_zoom_roi(self, frame_width, frame_height):
@@ -1122,6 +1142,7 @@ class PickleVisionTracker:
                     velocity=velocity,
                     landing_point=landing_point,
                     line_call=call,
+                    confidence=getattr(self, "_last_conf", 0.0),
                     camera_id=self.camera_id,
                 )
             )
@@ -1376,6 +1397,8 @@ class PickleVisionTracker:
         box, track_id = selection
         self.primary_track_id = track_id
         self.missed_frames = 0
+        if track_id in ids:
+            self._last_conf = float(confs[ids.index(track_id)])
         self._draw_primary_tracking(detect_frame, box, predicted=False)
         return detect_frame
 
@@ -1424,6 +1447,8 @@ class PickleVisionTracker:
             box, track_id = selection
             self.primary_track_id = track_id
             self.missed_frames = 0
+            if track_id in filtered_ids:
+                self._last_conf = float(filtered_confs[filtered_ids.index(track_id)])
             self._draw_primary_tracking(detect_frame, box, predicted=False)
             return detect_frame
 
