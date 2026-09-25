@@ -30,7 +30,6 @@
       Auto-Save Session
     </label>
 
-    <button class="btn" id="toggleSimulation" type="button">Pause Simulation</button>
     <button class="btn danger" id="resetSession" type="button">New Session</button>
     <a class="btn" href="/api/export/events.csv">Export CSV</a>
   </div>
@@ -176,6 +175,27 @@
   </div>
 </section>
 
+<section class="panel live-feed-panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Live Session</p>
+      <h3>Camera feed</h3>
+    </div>
+
+    <div class="actions">
+      <span id="feedStatus" class="pill">Camera off</span>
+      <button class="btn" id="toggleFeed" type="button">Start camera</button>
+    </div>
+  </div>
+
+  <div class="live-feed-frame">
+    <img id="liveFeed" src="{{ url_for('video_feed') }}" alt="Live camera feed">
+    <div id="feedPlaceholder" class="live-feed-placeholder">Camera is off. Select Start camera.</div>
+  </div>
+
+  <p id="feedMeta" class="score-message">Source: --</p>
+</section>
+
 <section class="dashboard-grid">
   <article class="metric-card call-card">
     <span>Latest Line Call</span>
@@ -241,6 +261,10 @@
     <h3>Performance indicators</h3>
 
     <div class="status-list">
+      <div><span>Camera Status</span><strong id="cameraStatusCard">--</strong></div>
+      <div><span>Model Engine</span><strong id="modelEngineCard">--</strong></div>
+      <div><span>Live Inference Latency</span><strong id="liveLatencyCard">--</strong></div>
+      <div><span>Tracking State</span><strong id="trackingStateCard">--</strong></div>
       <div><span>Average Confidence</span><strong id="avgConfidence">--</strong></div>
       <div><span>Average Latency</span><strong id="avgLatency">--</strong></div>
       <div><span>Maximum Latency</span><strong id="maxLatency">--</strong></div>
@@ -314,5 +338,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='live_feed.js') }}"></script>
 <script src="{{ url_for('static', filename='dashboard.js') }}?v=save-filter-final"></script>
 {% endblock %}

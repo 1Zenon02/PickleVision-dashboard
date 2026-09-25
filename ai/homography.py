@@ -1,3 +1,9 @@
+"""DEPRECATED: part of the early ai/pipeline.py scaffold, never wired into app.py.
+
+pixel_to_court() below is an identity passthrough placeholder. Real,
+calibrated homography is ai/engine/pickle_tracker.py's CourtMapper, fed live
+court-corner calibration by ai/tracker_service.py. Kept only for reference.
+"""
 from __future__ import annotations
 
 from typing import Tuple
