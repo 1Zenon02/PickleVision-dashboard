@@ -1,13 +1,11 @@
 from __future__ import annotations
 
+import atexit
 import csv
 import io
 import json
-import math
 import os
-import random
 import sqlite3
-import time
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -17,10 +15,7 @@ from typing import Any, Dict, List, Optional
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from ai.mock_ai import generate_mock_event
-
-
-from ai.mock_ai import generate_mock_event
+from ai.tracker_service import tracker_service
 
 # Add Firebase imports here:
 import firebase_admin
@@ -57,9 +52,7 @@ firestore_db = firestore.client()
 API_INGEST_KEY = os.environ.get("PICKLEVISION_API_KEY", "").strip()
 
 state_lock = Lock()
-SIMULATION_ENABLED = True
 SESSION_ID = datetime.now().strftime("S%Y%m%d%H%M%S")
-LAST_EVENT_TS = 0.0
 
 COURT_LENGTH_FT = 44.0
 COURT_WIDTH_FT = 20.0
@@ -574,30 +567,26 @@ def apply_rally_result(winner: str) -> Dict[str, Any]:
     return score_payload()
 
 
-def generate_trajectory(bounce_x: float, bounce_y: float) -> List[Dict[str, float]]:
-    start_x = max(1.0, bounce_x - random.uniform(10, 18))
-    start_y = min(COURT_WIDTH_FT - 1.0, max(1.0, bounce_y + random.uniform(-5, 5)))
-    points = []
-    for i in range(7):
-        t = i / 6
-        curve = math.sin(t * math.pi) * random.uniform(1.2, 3.0)
-        points.append(
-            {
-                "x": round(start_x + (bounce_x - start_x) * t, 2),
-                "y": round(start_y + (bounce_y - start_y) * t + curve, 2),
-            }
-        )
-    return points
-
-
-def simulate_event() -> Dict[str, Any]:
-    """Generate one mock event using the AI mock module.
-
-    Later, replace this function so it calls the real AI pipeline instead of
-    generate_mock_event(). The dashboard will still work as long as the returned
-    dictionary keeps the same keys.
-    """
-    return generate_mock_event(SESSION_ID)
+def idle_event() -> Dict[str, Any]:
+    """Placeholder shown when the live tracker hasn't produced any events yet
+    (camera off, or on but no ball detected). Deliberately blank/zeroed --
+    NOT fabricated data -- so the dashboard has something well-formed to
+    render before the first real bounce."""
+    return {
+        "session_id": SESSION_ID,
+        "timestamp": datetime.now().isoformat(timespec="milliseconds"),
+        "system_call": None,
+        "human_call": None,
+        "confidence": 0.0,
+        "bounce_x": 0.0,
+        "bounce_y": 0.0,
+        "court_zone": "No ball detected",
+        "latency_ms": 0.0,
+        "fps": 0.0,
+        "error_distance_mm": None,
+        "correct": None,
+        "trajectory": [],
+    }
 
 
 
@@ -683,8 +672,7 @@ def normalize_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def insert_event(event: Dict[str, Any]) -> None:
-    ensure_session()
+def _insert_event_row(event: Dict[str, Any]) -> None:
     with db() as conn:
         conn.execute(
             """
@@ -712,16 +700,66 @@ def insert_event(event: Dict[str, Any]) -> None:
         )
 
 
-def maybe_create_simulated_event() -> None:
-    global LAST_EVENT_TS
-    # Only generate data after login to avoid filling database while public pages are viewed.
+def insert_event(event: Dict[str, Any]) -> None:
+    ensure_session()
+    _insert_event_row(event)
+
+
+def insert_live_event(event: Dict[str, Any]) -> None:
+    """Insert a real event produced by the live tracker.
+
+    Unlike insert_event(), this must be safe to call from before_request on
+    ANY route, before that route's own login/session handling runs -- so it
+    skips ensure_session() (which reads Flask's session object) and only
+    touches the module-level SESSION_ID.
+    """
+    _insert_event_row(event)
+
+
+def ingest_live_tracker_events() -> None:
+    """Drain BallEvents the live tracker produced since the last request and
+    persist them as real dashboard events. Runs on the request thread (see
+    before_request), not the tracker's background thread -- see
+    tracker_service.pop_new_ball_events().
+    """
     if not session.get("user_id"):
         return
+
+    raw_events = tracker_service.pop_new_ball_events()
+    if not raw_events:
+        return
+
+    live_status = tracker_service.status()
     with state_lock:
-        now = time.time()
-        if SIMULATION_ENABLED and now - LAST_EVENT_TS >= 2.0:
-            insert_event(simulate_event())
-            LAST_EVENT_TS = now
+        for raw in raw_events:
+            landing_point_ft = raw.get("landing_point_ft")
+            line_call = raw.get("line_call")
+            if landing_point_ft is None or line_call not in {"IN", "OUT"}:
+                continue
+
+            # CourtMapper's landing_point_ft is (width_ft, length_ft); the
+            # dashboard's own court_zone()/canvas expect (length_ft, width_ft)
+            # -- swapped on purpose, see ai/tracker_service.py's
+            # _event_to_dict().
+            bounce_x = float(landing_point_ft[1])
+            bounce_y = float(landing_point_ft[0])
+
+            insert_live_event({
+                "session_id": SESSION_ID,
+                "game_id": None,
+                "timestamp": datetime.fromtimestamp(raw["timestamp"]).isoformat(timespec="milliseconds"),
+                "system_call": line_call,
+                "human_call": None,
+                "confidence": round(float(raw.get("confidence") or 0.0), 4),
+                "bounce_x": round(bounce_x, 4),
+                "bounce_y": round(bounce_y, 4),
+                "court_zone": court_zone(bounce_x, bounce_y),
+                "latency_ms": round(float(live_status.get("inference_ms") or 0.0), 2),
+                "fps": round(float(live_status.get("fps") or 0.0), 2),
+                "error_distance_mm": None,
+                "correct": None,
+                "trajectory": [],
+            })
 
 
 def rows_to_dicts(rows: List[sqlite3.Row]) -> List[Dict[str, Any]]:
@@ -818,8 +856,8 @@ def compute_metrics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         cpu_usage = psutil.cpu_percent(interval=None)
         ram_usage = psutil.virtual_memory().percent
     else:
-        cpu_usage = random.uniform(25, 60)
-        ram_usage = random.uniform(35, 70)
+        cpu_usage = None
+        ram_usage = None
 
     return {
         "total_shots": total,
@@ -1100,7 +1138,7 @@ def before_request() -> None:
     init_db()
     if request.endpoint and request.endpoint.startswith("static"):
         return
-    maybe_create_simulated_event()
+    ingest_live_tracker_events()
 
 
 @app.route("/")
@@ -1755,32 +1793,53 @@ def api_update_live_data():
 
 @app.route("/api/ai-status")
 def api_ai_status():
-    """Show model and simulation status for quick debugging."""
-    try:
-        from ai.detector import get_model_status
-        model_status = get_model_status()
-    except Exception as exc:  # pragma: no cover
-        model_status = {"available": False, "loaded": False, "error": str(exc)}
+    """Show live tracker status for quick debugging."""
+    return jsonify(tracker_service.status())
 
-    return jsonify({
-        "session_id": SESSION_ID,
-        "simulation_enabled": SIMULATION_ENABLED,
-        "database": str(DB_PATH),
-        "model": model_status,
-        "ingest_key_required": bool(API_INGEST_KEY),
-    })
+
+@app.route("/video_feed")
+def video_feed():
+    return Response(tracker_service.mjpeg_stream(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.route("/api/camera/status")
+def api_camera_status():
+    return jsonify(tracker_service.status())
+
+
+@app.route("/api/camera/trajectory")
+def api_camera_trajectory():
+    """Fast-polled, DB-free: the ball's current in-progress court path, for a
+    live-synced court-map trail (see ingest_live_tracker_events() for the
+    separate, slower, DB-backed committed-bounce-event path)."""
+    return jsonify({"trajectory": tracker_service.live_trajectory()})
+
+
+@app.route("/api/camera/start", methods=["POST"])
+def api_camera_start():
+    tracker_service.start()
+    return jsonify(tracker_service.status())
+
+
+@app.route("/api/camera/stop", methods=["POST"])
+def api_camera_stop():
+    tracker_service.stop()
+    return jsonify(tracker_service.status())
+
+
+atexit.register(tracker_service.stop)
 
 
 @app.route("/api/live-data")
 @login_required
 def api_live_data():
     events = get_recent_events(100)
-    latest = events[-1] if events else simulate_event()
+    latest = events[-1] if events else idle_event()
     metrics = compute_metrics(events)
 
-    # Draw only the current rally/shot path. Older independent simulated events
-    # made the court map look messy because their paths overlapped. If a real AI
-    # event sends a full trajectory list, that is what the dashboard shows.
+    # Draw only the current rally/shot path. If a real AI event sends a full
+    # trajectory list, that is what the dashboard shows; otherwise fall back
+    # to stitching one from recent bounce events.
     if isinstance(latest.get("trajectory"), list) and latest.get("trajectory"):
         rally_trajectory = latest["trajectory"]
     else:
@@ -1791,7 +1850,6 @@ def api_live_data():
         "metrics": metrics,
         "events": events[-15:],
         "rally_trajectory": rally_trajectory,
-        "simulation": SIMULATION_ENABLED,
         "score": score_payload(),
     })
 
@@ -1801,6 +1859,29 @@ def api_live_data():
 def api_events():
     limit = int(request.args.get("limit", 100))
     return jsonify(get_recent_events(limit))
+
+
+@app.route("/api/events/<int:event_id>/validate", methods=["POST"])
+@login_required
+def api_validate_event(event_id: int):
+    """Referee validation: record a human IN/OUT call for one event row."""
+    payload = request.get_json(silent=True) or {}
+    human_call = str(payload.get("human_call", "")).strip().upper()
+    if human_call not in {"IN", "OUT"}:
+        return jsonify({"error": "human_call must be IN or OUT"}), 400
+
+    with db() as conn:
+        row = conn.execute("SELECT system_call FROM events WHERE id = ?", (event_id,)).fetchone()
+        if row is None:
+            return jsonify({"error": "event not found"}), 404
+        correct = 1 if human_call == row["system_call"] else 0
+        conn.execute(
+            "UPDATE events SET human_call = ?, correct = ? WHERE id = ?",
+            (human_call, correct, event_id),
+        )
+        updated = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+
+    return jsonify(rows_to_dicts([updated])[0])
 
 
 @app.route("/api/reports")
@@ -1818,21 +1899,12 @@ def api_player_stats():
     return jsonify({"player_stats": player_stats(player_id), "system_metrics": compute_metrics(events)})
 
 
-@app.route("/api/toggle-simulation", methods=["POST"])
-@login_required
-def api_toggle_simulation():
-    global SIMULATION_ENABLED
-    SIMULATION_ENABLED = not SIMULATION_ENABLED
-    return jsonify({"simulation": SIMULATION_ENABLED})
-
-
 @app.route("/api/reset-session", methods=["POST"])
 @login_required
 def api_reset_session():
-    global SESSION_ID, LAST_EVENT_TS
+    global SESSION_ID
 
     SESSION_ID = datetime.now().strftime("S%Y%m%d%H%M%S")
-    LAST_EVENT_TS = 0.0
 
     session["score_state"] = fresh_score_state(started=False)
     session["match_status"] = "in_progress"
@@ -1906,4 +1978,4 @@ def export_games_csv():
 
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="127.0.0.1", port=5000, debug=True, use_reloader=False, threaded=True)

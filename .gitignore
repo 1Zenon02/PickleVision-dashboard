@@ -7,3 +7,11 @@ __pycache__/
 *.pyc
 venv/
 .env
+
+# Model weights (large binaries; drop best.pt in models/ locally, don't commit it)
+*.pt
+
+# Roboflow-local model cache: downloaded weights + a GPU-specific TensorRT
+# build + account-linked usage data. Never share/commit -- each machine
+# downloads and builds its own.
+ai/engine/model_cache/

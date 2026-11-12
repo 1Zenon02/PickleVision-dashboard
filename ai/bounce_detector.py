@@ -1,3 +1,9 @@
+"""DEPRECATED: part of the early ai/pipeline.py scaffold, never wired into app.py.
+
+Real bounce detection is ai/engine/pickle_tracker.py's
+PickleVisionTracker._detect_ball_contact (physics-based V-shape Y-direction
+reversal), run by ai/tracker_service.py. Kept only for reference.
+"""
 from __future__ import annotations
 
 from typing import Dict, List, Optional
